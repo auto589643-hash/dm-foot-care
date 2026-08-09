@@ -1,6 +1,13 @@
 import { handleOptions, readJsonBody, sendJson, setCors } from '../../_lib/http.mjs'
-import { createFolder, findRootFolder } from '../../_lib/drive.mjs'
-import { requireSupabaseUser, supabaseRest } from '../../_lib/supabase.mjs'
+import { createFolder, findOrCreateFolder, findRootFolder } from '../../_lib/drive.mjs'
+import { loadProfileForUser, requireSupabaseUser, supabaseRest } from '../../_lib/supabase.mjs'
+
+function bangkokDateParts(value) {
+  const direct = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (direct) return { year: direct[1], month: direct[2], day: direct[3] }
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value || Date.now()))
+  return Object.fromEntries(parts.filter((part) => ['year', 'month', 'day'].includes(part.type)).map((part) => [part.type, part.value]))
+}
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
@@ -16,11 +23,22 @@ export default async function handler(req, res) {
     const exam = exams?.[0]
     if (!exam) return sendJson(res, 404, { message: 'ไม่พบรายการตรวจของผู้ใช้' })
     const examinedAt = body.examinedAt || exam.examined_at || new Date().toISOString()
-    const date = new Date(examinedAt)
-    const pad = (value) => String(value).padStart(2, '0')
-    const folderName = `DM Foot Care_${session.user.id}_${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}_${exam.examination_code}`
-    const folder = await createFolder(folderName, await findRootFolder())
-    return sendJson(res, 201, { folderId: folder.id })
+    const { year, month, day } = bangkokDateParts(examinedAt)
+    const profile = await loadProfileForUser(session.user.id)
+    const username = String(profile?.username || session.user.id).replace(/[\\/:*?"<>|]/g, '_')
+
+    // Supabase stores file IDs only. Original images are saved as:
+    // DMFC Program/YYYY/MM/DD/<username>/<image name>.
+    let rootId = await findRootFolder()
+    if (!rootId) rootId = (await createFolder('DMFC Program')).id
+    const yearFolder = await findOrCreateFolder(rootId, year)
+    const monthFolder = await findOrCreateFolder(yearFolder.id, month)
+    const dayFolder = await findOrCreateFolder(monthFolder.id, day)
+    const userFolder = await findOrCreateFolder(dayFolder.id, username, {
+      dmfcOwnerUserId: session.user.id,
+      dmfcExaminationId: examinationId,
+    })
+    return sendJson(res, 201, { folderId: userFolder.id })
   } catch (error) {
     console.error('Drive folder creation failed', error)
     return sendJson(res, 500, { message: 'ไม่สามารถสร้างโฟลเดอร์เก็บรูปได้' })
