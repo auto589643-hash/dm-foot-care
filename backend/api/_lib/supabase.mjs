@@ -86,7 +86,7 @@ export async function supabaseRest(path, init = {}) {
 export async function loadProfileForUser(userId) {
   const { url, serviceKey } = config()
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` }
-  const profileResponse = await fetch(`${url}/rest/v1/profiles?select=user_id,username,date_of_birth,occupation,account_status&user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers })
+  const profileResponse = await fetch(`${url}/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status&user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers })
   if (!profileResponse.ok) throw new Error(`Profile request failed (${profileResponse.status})`)
   const profiles = await profileResponse.json()
   if (!profiles[0]) return null
@@ -106,7 +106,7 @@ export async function loadProfileForUser(userId) {
   return {
     id: profile.user_id,
     username: profile.username,
-    displayName: profile.username,
+    displayName: profile.display_name || profile.username,
     dateOfBirth: profile.date_of_birth,
     age: Math.max(0, age),
     generation: '',
