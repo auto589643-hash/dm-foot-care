@@ -204,7 +204,9 @@ export class HttpOriginalImageArchive implements OriginalImageArchive {
     const response = await this.client.postBinary<{ fileId: string }>('/v1/original-images', image, {
       'x-dmfc-drive-folder': folderId,
       'x-dmfc-image-position': position,
-      'x-dmfc-drive-filename': buildOriginalDriveFilename(position, image.type),
+      // HTTP header values are ByteStrings. Percent-encode Thai file names in
+      // transit, then the server decodes them before calling Google Drive.
+      'x-dmfc-drive-filename': encodeURIComponent(buildOriginalDriveFilename(position, image.type)),
     })
     return response.fileId
   }
