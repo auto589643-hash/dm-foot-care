@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict'
+import { BackendHttpClient, HttpAdminReadService, HttpAuthService, HttpExaminationRepository, HttpFootAssessmentProvider, HttpIntegrationError, HttpKnowledgeLibraryService, HttpOriginalImageArchive, HttpThumbnailService } from '../src/services/httpAdapters.ts'
+
+const calls: { url: string; init: RequestInit }[] = []
+let returnUnauthorized = false
+const fetchImpl: typeof fetch = async (input, init = {}) => {
+  const url = String(input)
+  calls.push({ url, init })
+  if (returnUnauthorized) return new Response(JSON.stringify({ message: 'expired' }), { status: 401, headers: { 'content-type': 'application/json' } })
+  if (url.endsWith('/v1/auth/username/sign-in')) return json({ accessToken: 'short-lived', profile: { id: 'u1', username: 'DM001', displayName: 'สมใจ ใจดี', dateOfBirth: '1964-04-12', age: 62, generation: 'Baby Boomer', occupation: 'เกษตรกร', role: 'patient' } })
+  if (url.endsWith('/v1/auth/session')) return json({ profile: { id: 'u1', username: 'DM001', displayName: 'สมใจ ใจดี', dateOfBirth: '1964-04-12', age: 62, generation: 'Baby Boomer', occupation: 'เกษตรกร', role: 'patient' } })
+  if (url.endsWith('/v1/original-images/folders')) return json({ folderId: 'drive-folder-1' })
+  if (url.endsWith('/v1/original-images')) return json({ fileId: 'drive-file-1' })
+  if (url.endsWith('/v1/analysis')) return json({ runId: 'run-1', rawResult: {}, validation: { ok: true, errors: [] }, findings: [] })
+  if (url.endsWith('/v1/examinations/ex-1/thumbnails')) return json({ thumbnails: { 'left-dorsal': 'thumb-1' } })
+  if (url.endsWith('/v1/examinations/drafts')) return json({ id: 'ex-1', userId: 'u1', status: 'draft' })
+  if (url.endsWith('/v1/examinations')) return json({ examinations: [{ id: 'ex-1', date: '2026-08-08', displayDate: '8 ส.ค. 2569', time: '09:42', status: 'complete', findings: [] }] })
+  if (url.endsWith('/v1/knowledge')) return json({ articles: [{ id: 'K-PATIENT', title: 'Backend article', category: 'พื้นฐาน', severity: 'ทุกระดับ', summary: 'summary', care: ['step'], readTime: 'อ่าน 1 นาที', tone: 'blue', status: 'published' }], diseases: [{ id: 'uuid-009', code: 'D009', name: 'Backend disease', category: 'ผิวหนัง', description: 'desc', detection_criteria: { signals: ['ผิวลอก', 'ความหยาบ'] }, disease_severity_levels: [{ label: 'เล็กน้อย', rank: 1, criteria: { description: 'mild' } }, { label: 'ปานกลาง', rank: 2, criteria: { description: 'moderate' } }], care_instruction: 'care', recommendation: 'recommendation', reference_image_path: 'disease/D009.jpg', active: true }] })
+  if (url.endsWith('/v1/admin/users') && (init?.method ?? 'GET') === 'GET') return json({ users: [{ id: 'u1', username: 'DM001', name: 'สมใจ ใจดี', dateOfBirth: '1964-04-12', age: 62, occupation: 'เกษตรกร', pinConfigured: true, status: 'active', lastExam: 'วันนี้ 09:42' }] })
+  if (url.endsWith('/v1/admin/users/u1/examinations') && (init?.method ?? 'GET') === 'GET') return json({ examinations: [{ id: 'EX-STAFF-1', date: '2026-08-08', displayDate: '8 ส.ค. 2569', time: '09:42', status: 'complete', findings: [], thumbnails: {} }] })
+  if (url.endsWith('/v1/admin/diseases') && (init?.method ?? 'GET') === 'GET') return json({ diseases: [{ id: 'D001', name: 'ผิวแห้ง', category: 'ผิวหนัง', description: 'desc', criteria: 'criteria', severityCriteria: 'severity', severity: 'ปานกลาง', care: 'care', recommendation: 'recommendation', active: true }] })
+  if (url.endsWith('/v1/admin/knowledge') && (init?.method ?? 'GET') === 'GET') return json({ articles: [{ id: 'K001', title: 'ดูแลเท้า', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: 'summary', care: ['step'], readTime: 'อ่าน 1 นาที', tone: 'blue', status: 'published' }] })
+  if (url.endsWith('/v1/admin/users') && (init?.method ?? 'GET') === 'POST') return json({ user: { id: 'u2', username: 'DM002', name: 'ผู้ใช้ใหม่', dateOfBirth: '1960-01-01', age: 66, occupation: 'ค้าขาย', pinConfigured: true, status: 'active', lastExam: 'ยังไม่มีประวัติ' } })
+  if (url.endsWith('/v1/admin/users/u1') && init?.method === 'PATCH') return json({ user: { id: 'u1', username: 'DM001', name: 'สมใจ ใจดี', dateOfBirth: '1964-04-12', age: 62, occupation: 'เกษตรกร', pinConfigured: true, status: 'active', lastExam: 'วันนี้ 09:42' } })
+  if (url.endsWith('/v1/admin/diseases') && (init?.method ?? 'GET') === 'POST') return json({ disease: { id: 'D006', name: 'ใหม่', category: 'ผิวหนัง', description: 'desc', criteria: 'criteria', severityCriteria: 'severity', severity: 'เล็กน้อย', care: 'care', recommendation: 'recommendation', active: true } })
+  if (url.endsWith('/v1/admin/knowledge') && (init?.method ?? 'GET') === 'POST') return json({ article: { id: 'K006', title: 'ใหม่', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: 'summary', care: ['step'], readTime: 'อ่าน 1 นาที', tone: 'blue', status: 'draft' } })
+  if (url.endsWith('/v1/examinations/ex-1/images')) return json({ driveFolderId: 'drive-folder-1', driveFileIds: {} })
+  if (url.endsWith('/analysis-runs')) return json({ runId: 'run-1' })
+  return json({ ok: true })
+}
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } })
+}
+
+const client = new BackendHttpClient({ baseUrl: 'https://api.example.test/', getAccessToken: () => 'access-token', fetchImpl })
+let observedToken: string | null = null
+const auth = new HttpAuthService(client, { onAccessToken: (token) => { observedToken = token } })
+const profile = await auth.signInWithUsername('DM001', '1234')
+assert.equal(profile.username, 'DM001')
+assert.equal(observedToken, 'short-lived')
+assert.equal(calls[0].url, 'https://api.example.test/v1/auth/username/sign-in')
+assert.equal(calls[0].init.headers instanceof Headers ? calls[0].init.headers.get('authorization') : undefined, 'Bearer access-token')
+assert.equal(calls[0].init.credentials, 'include')
+assert.deepEqual(JSON.parse(String(calls[0].init.body)), { username: 'DM001', pin: '1234' })
+
+const archive = new HttpOriginalImageArchive(client)
+assert.equal(await archive.createPrivateExaminationFolder('DM001', 'ex-1', '2026-08-08T02:00:00.000Z'), 'drive-folder-1')
+const folderCall = calls.at(-1)
+assert.deepEqual(JSON.parse(String(folderCall?.init.body)), { examinationId: 'ex-1', examinedAt: '2026-08-08T02:00:00.000Z' })
+const image = new Blob(['image'], { type: 'image/png' })
+assert.equal(await archive.uploadOriginal('drive-folder-1', 'left-dorsal', image), 'drive-file-1')
+const uploadCall = calls.at(-1)
+assert.equal(uploadCall?.init.headers instanceof Headers ? uploadCall.init.headers.get('x-dmfc-image-position') : undefined, 'left-dorsal')
+assert.equal(uploadCall?.init.headers instanceof Headers ? uploadCall.init.headers.get('x-dmfc-drive-filename') : undefined, '01_left_dorsal.png')
+assert.equal(uploadCall?.init.body instanceof Blob, true)
+
+const provider = new HttpFootAssessmentProvider(client)
+assert.equal((await provider.analyze({ examinationId: 'ex-1', idempotencyKey: 'ex-1:1', imageReferences: { 'left-dorsal': 'drive-file-1', 'left-sole': 'f2', 'right-dorsal': 'f3', 'right-sole': 'f4' }, diseaseMasterVersion: '1' })).runId, 'run-1')
+const thumbnails = new HttpThumbnailService(client)
+const thumbnailResult = await thumbnails.generateAndStore('ex-1', { 'left-dorsal': image })
+assert.equal(thumbnailResult['left-dorsal'], 'thumb-1')
+
+const repository = new HttpExaminationRepository(client)
+assert.equal((await repository.createDraft('u1')).id, 'ex-1')
+const draftCall = calls.at(-1)
+assert.deepEqual(JSON.parse(String(draftCall?.init.body)), {})
+assert.equal((await repository.listForCurrentUser()).length, 1)
+const knowledge = new HttpKnowledgeLibraryService(client)
+assert.equal((await knowledge.listPublished()).articles[0].id, 'K-PATIENT')
+const publishedDiseases = (await knowledge.listPublished()).diseases
+assert.equal(publishedDiseases[0].id, 'D009')
+assert.equal(publishedDiseases[0].criteria, 'ผิวลอก · ความหยาบ')
+assert.deepEqual(publishedDiseases[0].severityLevels?.map((level) => level.label), ['เล็กน้อย', 'ปานกลาง'])
+assert.equal(publishedDiseases[0].referenceImage, 'disease/D009.jpg')
+const admin = new HttpAdminReadService(client)
+assert.equal((await admin.listUsers()).length, 1)
+assert.equal((await admin.listUserExaminations('u1')).length, 1)
+assert.equal((await admin.listDiseases())[0].id, 'D001')
+assert.equal((await admin.listKnowledge())[0].id, 'K001')
+assert.equal((await admin.saveUser({ username: 'DM002', name: 'ผู้ใช้ใหม่', dateOfBirth: '1960-01-01', occupation: 'ค้าขาย', status: 'active', pin: '1234' })).id, 'u2')
+await admin.setUserStatus('u1', 'inactive')
+await admin.resetUserPin('u1')
+assert.equal((await admin.saveDisease({ name: 'ใหม่', category: 'ผิวหนัง', description: 'desc', criteria: 'criteria', severityCriteria: 'severity', severity: 'เล็กน้อย', care: 'care', recommendation: 'recommendation', active: true })).id, 'D006')
+await admin.setDiseaseActive('D006', false)
+assert.equal((await admin.saveKnowledge({ title: 'ใหม่', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: 'summary', care: ['step'], readTime: 'อ่าน 1 นาที', tone: 'blue', status: 'draft' })).id, 'K006')
+assert.equal((await repository.getImageReferences('ex-1')).driveFolderId, 'drive-folder-1')
+await repository.updateStatus('ex-1', 'analyzing')
+
+returnUnauthorized = true
+assert.equal(await auth.restoreSession(), null)
+returnUnauthorized = false
+const failingClient = new BackendHttpClient({ baseUrl: 'https://api.example.test', fetchImpl: async () => json({ message: 'nope' }, 500) })
+await assert.rejects(() => failingClient.get('/v1/health'), (error: unknown) => error instanceof HttpIntegrationError && error.status === 500)
+assert.throws(() => new BackendHttpClient({ baseUrl: 'http://api.example.test', fetchImpl }), /must use HTTPS/)
+assert.doesNotThrow(() => new BackendHttpClient({ baseUrl: 'http://localhost:3000', fetchImpl }))
+
+console.log('HTTP adapter contract tests passed')
