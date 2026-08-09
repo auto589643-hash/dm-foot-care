@@ -11,10 +11,12 @@ export default async function handler(req, res) {
     if (!session) return
     const folderId = String(req.headers['x-dmfc-drive-folder'] || '')
     const position = String(req.headers['x-dmfc-image-position'] || '')
-    const filename = String(req.headers['x-dmfc-drive-filename'] || `foot-${position}.jpg`)
+    const rawFilename = String(req.headers['x-dmfc-drive-filename'] || `foot-${position}.jpg`)
+    let filename
+    try { filename = decodeURIComponent(rawFilename) } catch { return sendJson(res, 400, { message: 'Image filename is invalid' }) }
     if (!folderId || !position) return sendJson(res, 400, { message: 'Drive folder and image position are required' })
     const folder = await getFileMetadata(folderId)
-    if (folder.mimeType !== 'application/vnd.google-apps.folder' || !String(folder.name || '').startsWith(`DM Foot Care_${session.user.id}_`)) {
+    if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.appProperties?.dmfcOwnerUserId !== session.user.id) {
       return sendJson(res, 403, { message: 'ไม่มีสิทธิ์เขียนโฟลเดอร์นี้' })
     }
     const data = await readBinaryBody(req)
