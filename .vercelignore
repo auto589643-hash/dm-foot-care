@@ -1,0 +1,3 @@
+api/v1/**
+api/_lib/**
+api/health.mjs
