@@ -1,4 +1,5 @@
-import { handleOptions, readJsonBody, sendJson } from '../_lib/http.mjs'
+import { handleOptions, readJsonBody, sendJson, setCors } from '../_lib/http.mjs'
+import { downloadFile } from '../_lib/drive.mjs'
 import { callGemini } from '../_lib/gemini.mjs'
 import { loadActiveDiseaseMaster, requireSupabaseUser } from '../_lib/supabase.mjs'
 
@@ -7,12 +8,19 @@ const validSeverities = new Set(['เล็กน้อย', 'ปานกลา
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
+  setCors(res)
   if (req.method !== 'POST') return sendJson(res, 405, { message: 'Method not allowed' })
   try {
     const session = await requireSupabaseUser(req, res)
     if (!session) return
     const body = await readJsonBody(req)
-    const images = Array.isArray(body.images) ? body.images : []
+    let images = Array.isArray(body.images) ? body.images : []
+    if (!images.length && body.imageReferences && typeof body.imageReferences === 'object') {
+      images = await Promise.all(Object.entries(body.imageReferences).map(async ([position, fileId]) => {
+        const file = await downloadFile(String(fileId))
+        return { position, mimeType: file.mimeType, data: file.data.toString('base64') }
+      }))
+    }
     if (!body.examinationId || !body.idempotencyKey || images.length === 0) {
       return sendJson(res, 400, { message: 'examinationId, idempotencyKey and images are required for the initial Gemini path' })
     }
@@ -56,4 +64,3 @@ export default async function handler(req, res) {
     sendJson(res, 500, { message: error instanceof Error ? error.message : 'Gemini analysis failed' })
   }
 }
-
