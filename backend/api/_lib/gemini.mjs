@@ -12,7 +12,7 @@ function parseJsonText(value) {
 
 export async function callGemini({ images, diseaseMaster }) {
   const apiKey = process.env.GEMINI_API_KEY
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured')
   if (!Array.isArray(images) || images.length === 0) throw new Error('At least one image is required for the Gemini smoke path')
 
@@ -38,7 +38,6 @@ export async function callGemini({ images, diseaseMaster }) {
     body: JSON.stringify({
       contents: [{ role: 'user', parts }],
       generationConfig: {
-        temperature: 0,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'object',
