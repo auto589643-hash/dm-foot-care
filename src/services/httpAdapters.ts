@@ -1,6 +1,7 @@
 import type { Examination, Finding, FootPosition, Profile, Severity } from '../types.ts'
 import type { AiValidationResult } from './aiValidator.ts'
 import { buildOriginalDriveFilename } from './drivePath.ts'
+import { createThumbnails } from './thumbnailService.ts'
 import { createAuditEvent, type AuditEventInput, type AuditLogger } from './auditLog.ts'
 import { normalizeDiseaseList, requireDisease } from './runtimeMappers.ts'
 import type {
@@ -232,10 +233,19 @@ export class HttpThumbnailService implements ThumbnailService {
   }
 
   async generateAndStore(examinationId: string, images: Record<FootPosition, Blob>): Promise<Record<FootPosition, string>> {
-    void images
-    const response = await this.client.postJson<{ thumbnails: Record<FootPosition, string> }>(`/v1/examinations/${encodeURIComponent(examinationId)}/thumbnails`, { source: 'private-drive-originals' })
+    const originals = Object.fromEntries(await Promise.all(Object.entries(images).map(async ([position, image]) => [position, await blobToDataUrl(image)]))) as Partial<Record<FootPosition, string>>
+    const thumbnails = await createThumbnails(originals)
+    const response = await this.client.postJson<{ thumbnails: Record<FootPosition, string> }>(`/v1/examinations/${encodeURIComponent(examinationId)}/thumbnails`, { thumbnails })
     return response.thumbnails
   }
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  return `data:${blob.type || 'image/jpeg'};base64,${btoa(binary)}`
 }
 
 export class HttpExaminationRepository implements ExaminationRepository {
