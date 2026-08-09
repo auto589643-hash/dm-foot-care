@@ -61,6 +61,7 @@ export default async function handler(req, res) {
       userId: session.user.id,
     })
   } catch (error) {
+    console.error('Gemini analysis failed', error)
     sendJson(res, 500, { message: error instanceof Error ? error.message : 'Gemini analysis failed' })
   }
 }
