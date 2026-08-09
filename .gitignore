@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+dm-foot-care-358d37d11b5e.json
+*-service-account*.json
+client_secret_*.json
+*.log
+.test-deps
+test-artifacts
+*.tsbuildinfo
