@@ -16,6 +16,9 @@ import examinationStatus from '../backend/api/v1/examinations/[id]/status.mjs'
 import thumbnailReferences from '../backend/api/v1/examinations/[id]/thumbnail-references.mjs'
 import thumbnails from '../backend/api/v1/examinations/[id]/thumbnails.mjs'
 import imageFolders from '../backend/api/v1/original-images/folders.mjs'
+import adminUsers from '../backend/api/v1/admin/users.mjs'
+import adminDiseases from '../backend/api/v1/admin/diseases.mjs'
+import adminKnowledge from '../backend/api/v1/admin/knowledge.mjs'
 import { sendJson } from '../backend/api/_lib/http.mjs'
 
 function pathAndQuery(req) {
@@ -43,6 +46,9 @@ export default async function handler(req, res) {
   if (path === 'v1/knowledge') return knowledge(req, res)
   if (path === 'v1/original-images') return originalImages(req, res)
   if (path === 'v1/original-images/folders') return imageFolders(req, res)
+  if (path === 'v1/admin/users') return adminUsers(req, res)
+  if (path === 'v1/admin/diseases') return adminDiseases(req, res)
+  if (path === 'v1/admin/knowledge') return adminKnowledge(req, res)
 
   let match = path.match(/^v1\/examinations\/([^/]+)\/images\/([^/]+)$/)
   if (match) {
