@@ -3,12 +3,19 @@ import crypto from 'node:crypto'
 let cachedToken = null
 let cachedTokenExpiresAt = 0
 
-function credentials() {
+function serviceAccountCredentials() {
   const raw = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
   if (!raw) throw new Error('Google Drive service account is not configured')
   const value = typeof raw === 'string' ? JSON.parse(raw) : raw
   if (!value.client_email || !value.private_key) throw new Error('Google Drive service account JSON is incomplete')
   return value
+}
+
+function oauthCredentials() {
+  const clientId = String(process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || '').trim()
+  const clientSecret = String(process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || '').trim()
+  const refreshToken = String(process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN || '').trim()
+  return clientId && clientSecret && refreshToken ? { clientId, clientSecret, refreshToken } : null
 }
 
 function base64Url(value) {
@@ -17,16 +24,30 @@ function base64Url(value) {
 
 async function accessToken() {
   if (cachedToken && cachedTokenExpiresAt > Date.now() + 60_000) return cachedToken
-  const serviceAccount = credentials()
-  const now = Math.floor(Date.now() / 1000)
-  const unsigned = `${base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64Url(JSON.stringify({ iss: serviceAccount.client_email, scope: 'https://www.googleapis.com/auth/drive', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }))}`
-  const signer = crypto.createSign('RSA-SHA256')
-  signer.update(unsigned)
-  const assertion = `${unsigned}.${base64Url(signer.sign(serviceAccount.private_key))}`
+  const oauth = oauthCredentials()
+  let body
+  if (oauth) {
+    // OAuth creates files as the Google Drive owner, so a personal My Drive
+    // can provide the storage quota. Service accounts remain supported for Shared Drives.
+    body = new URLSearchParams({
+      client_id: oauth.clientId,
+      client_secret: oauth.clientSecret,
+      refresh_token: oauth.refreshToken,
+      grant_type: 'refresh_token',
+    })
+  } else {
+    const serviceAccount = serviceAccountCredentials()
+    const now = Math.floor(Date.now() / 1000)
+    const unsigned = `${base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64Url(JSON.stringify({ iss: serviceAccount.client_email, scope: 'https://www.googleapis.com/auth/drive', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }))}`
+    const signer = crypto.createSign('RSA-SHA256')
+    signer.update(unsigned)
+    const assertion = `${unsigned}.${base64Url(signer.sign(serviceAccount.private_key))}`
+    body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion })
+  }
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+    body,
   })
   const payload = await response.json()
   if (!response.ok || !payload.access_token) throw new Error(`Google token request failed (${response.status})`)
@@ -47,19 +68,45 @@ async function driveFetch(path, init = {}) {
   return response
 }
 
+function escapeDriveQuery(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+function driveUrl(path, params = {}) {
+  const query = new URLSearchParams({ supportsAllDrives: 'true', ...params })
+  return `${path}${path.includes('?') ? '&' : '?'}${query}`
+}
+
 export async function findRootFolder() {
   const explicit = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID
   if (explicit) return explicit
-  const query = encodeURIComponent("name = 'DMFC Program' and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
-  const response = await driveFetch(`/files?q=${query}&fields=files(id,name)&pageSize=10`)
+  const query = "name = 'DMFC Program' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+  const response = await driveFetch(driveUrl('/files', { q: query, fields: 'files(id,name)', pageSize: '10', includeItemsFromAllDrives: 'true' }))
   const payload = await response.json()
   return payload.files?.[0]?.id || null
 }
 
-export async function createFolder(name, parentId = null) {
-  const body = { name, mimeType: 'application/vnd.google-apps.folder', ...(parentId ? { parents: [parentId] } : {}) }
-  const response = await driveFetch('/files?fields=id,name,parents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+export async function createFolder(name, parentId = null, appProperties = undefined) {
+  const body = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+    ...(parentId ? { parents: [parentId] } : {}),
+    ...(appProperties ? { appProperties } : {}),
+  }
+  const response = await driveFetch(driveUrl('/files', { fields: 'id,name,parents,appProperties' }), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   return response.json()
+}
+
+export async function findChildFolder(parentId, name) {
+  const query = `name = '${escapeDriveQuery(name)}' and '${escapeDriveQuery(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+  const response = await driveFetch(driveUrl('/files', { q: query, fields: 'files(id,name,parents,appProperties)', pageSize: '10', includeItemsFromAllDrives: 'true' }))
+  const payload = await response.json()
+  return payload.files?.[0] || null
+}
+
+export async function findOrCreateFolder(parentId, name, appProperties = undefined) {
+  const existing = await findChildFolder(parentId, name)
+  return existing || createFolder(name, parentId, appProperties)
 }
 
 export async function uploadFile(folderId, filename, mimeType, data) {
@@ -68,7 +115,7 @@ export async function uploadFile(folderId, filename, mimeType, data) {
   const preamble = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`)
   const ending = Buffer.from(`\r\n--${boundary}--`)
   const body = Buffer.concat([preamble, data, ending])
-  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType', {
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType&supportsAllDrives=true', {
     method: 'POST',
     headers: { authorization: `Bearer ${await accessToken()}`, 'content-type': `multipart/related; boundary=${boundary}`, 'content-length': String(body.length) },
     body,
@@ -78,11 +125,11 @@ export async function uploadFile(folderId, filename, mimeType, data) {
 }
 
 export async function getFileMetadata(fileId) {
-  const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,parents`)
+  const response = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { fields: 'id,name,mimeType,parents,appProperties' }))
   return response.json()
 }
 
 export async function downloadFile(fileId) {
-  const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?alt=media`)
+  const response = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }))
   return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type') || 'application/octet-stream' }
 }
