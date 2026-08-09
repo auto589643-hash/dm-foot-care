@@ -83,6 +83,38 @@ export async function supabaseRest(path, init = {}) {
   return payload
 }
 
+/** Server-only helper for the private Supabase Storage API. */
+export async function supabaseStorage(path, init = {}) {
+  const { url, serviceKey } = config()
+  const headers = new Headers(init.headers || {})
+  headers.set('apikey', serviceKey)
+  headers.set('authorization', `Bearer ${serviceKey}`)
+  const response = await fetch(`${url}/storage/v1${path}`, { ...init, headers })
+  const raw = await response.text()
+  let payload = null
+  try { payload = raw ? JSON.parse(raw) : null } catch { payload = raw }
+  if (!response.ok) {
+    const message = payload?.message || payload?.error || payload?.hint || `Supabase Storage request failed (${response.status})`
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+  return payload
+}
+
+export async function createStorageSignedUrl(bucket, objectPath, expiresIn = 3600) {
+  const payload = await supabaseStorage(`/object/sign/${encodeURIComponent(bucket)}/${objectPath.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ expiresIn }),
+  })
+  const signed = payload?.signedURL || payload?.signedUrl
+  if (!signed) throw new Error('Supabase Storage did not return a signed URL')
+  if (/^https?:\/\//i.test(signed)) return signed
+  const { url } = config()
+  return `${url}/storage/v1${signed}`
+}
+
 export async function loadProfileForUser(userId) {
   const { url, serviceKey } = config()
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` }
