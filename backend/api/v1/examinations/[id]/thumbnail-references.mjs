@@ -13,6 +13,9 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req)
     if (!await getOwnedExamination(session.user.id, examinationId)) return sendJson(res, 404, { message: 'ไม่พบรายการตรวจ' })
     for (const [position, path] of Object.entries(body.thumbnails || {})) {
+      // The thumbnail endpoint already persists a safe storage path and returns
+      // a short-lived URL for display. Never replace that path with the URL.
+      if (/^https?:\/\//i.test(String(path))) continue
       await supabaseRest(`/rest/v1/examination_images?examination_id=eq.${encodeURIComponent(examinationId)}&position=eq.${encodeURIComponent(String(position).replace('-', '_'))}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ thumbnail_path: path }) })
     }
     return sendJson(res, 204, null)

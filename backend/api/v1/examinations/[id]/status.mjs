@@ -16,7 +16,11 @@ export default async function handler(req, res) {
     if (!allowed.has(body.status)) return sendJson(res, 400, { message: 'สถานะไม่ถูกต้อง' })
     const exam = await getOwnedExamination(session.user.id, examinationId)
     if (!exam) return sendJson(res, 404, { message: 'ไม่พบรายการตรวจ' })
-    const rows = await supabaseRest(`/rest/v1/examinations?id=eq.${encodeURIComponent(examinationId)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ status: body.status }) })
+    const update = { status: body.status }
+    // Keep the actual completion time for chronological history. Older rows
+    // retain their creation time as a safe fallback in the read API.
+    if (body.status === 'confirmed') update.examined_at = new Date().toISOString()
+    const rows = await supabaseRest(`/rest/v1/examinations?id=eq.${encodeURIComponent(examinationId)}`, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(update) })
     return sendJson(res, 200, { id: rows?.[0]?.id || examinationId, status: body.status })
   } catch (error) {
     console.error('examination status update failed', error)
