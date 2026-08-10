@@ -1,0 +1,51 @@
+name: Apply UX speed patch
+
+on:
+  push:
+    branches:
+      - feat/ux-speed-optimistic
+    paths:
+      - scripts/apply-ux-speed.mjs
+      - .github/workflows/apply-ux-speed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ux-speed-optimistic
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply UX patch
+        run: node scripts/apply-ux-speed.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify production build
+        run: npm run build
+
+      - name: Commit patched source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "Improve loading feedback and optimistic interactions"
+          git push origin HEAD:feat/ux-speed-optimistic
