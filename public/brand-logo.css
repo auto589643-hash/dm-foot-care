@@ -1,0 +1,23 @@
+/* DM Foot Care brand identity override.
+   The same approved DMFC Logo.png is used for every in-app brand mark. */
+.brand-mark {
+  width: 42px !important;
+  height: 42px !important;
+  flex: 0 0 42px !important;
+  background-color: transparent !important;
+  background-image: url('https://github.com/auto589643-hash/dm-foot-care/blob/main/DMFC%20Logo.png?raw=true') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: contain !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.brand-mark svg {
+  display: none !important;
+}
+
+.brand-on-blue .brand-mark {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
