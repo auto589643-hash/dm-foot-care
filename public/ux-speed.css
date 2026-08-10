@@ -1,0 +1,174 @@
+/* Perceived-performance and interaction feedback layer.
+   Motion is limited to transform/opacity for responsive feedback, with a reduced-motion fallback. */
+
+/* Login brand lockup: larger approved logo with product name underneath. */
+.login-brand-lockup {
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: max-content;
+  line-height: 1.05;
+}
+.login-brand-lockup .brand-mark {
+  width: 108px !important;
+  height: 108px !important;
+  flex-basis: 108px !important;
+}
+.login-brand-lockup > span:last-child {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 20px;
+  letter-spacing: -.02em;
+}
+
+/* Fast branded app boot instead of a visually blank session wait. */
+.app-boot {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f7fafc;
+}
+.boot-card {
+  width: min(360px, 92vw);
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 30px 28px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  box-shadow: 0 18px 48px rgba(16, 35, 63, .08);
+  animation: ux-fade-in 220ms ease-out both;
+}
+.boot-card .brand-mark {
+  width: 76px !important;
+  height: 76px !important;
+  flex-basis: 76px !important;
+}
+.boot-copy { display: grid; gap: 4px; text-align: center; }
+.boot-copy strong { font-family: 'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif; font-size: 20px; }
+.boot-copy span { color: #62748a; font-size: 14px; }
+.boot-progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eaf2ff;
+}
+.boot-progress span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  animation: ux-boot-progress 1.05s ease-in-out infinite;
+}
+
+/* Immediate async feedback. */
+.action-pending {
+  position: relative;
+  cursor: progress !important;
+}
+.action-pending::after {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: .86;
+  animation: ux-spin .7s linear infinite;
+}
+
+.toggle,
+.toggle > span {
+  transition: transform 180ms cubic-bezier(.23,1,.32,1), background-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+[data-pending='true'] {
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(.23,1,.32,1);
+}
+[data-pending='true'] .toggle {
+  cursor: progress;
+  animation: ux-sync-pulse .85s ease-in-out infinite;
+}
+[data-pending='true'] .status-pill,
+[data-pending='true'] .disease-code {
+  transition: opacity 180ms ease;
+  opacity: .72;
+}
+
+/* Progress should never look frozen while genuine backend work continues. */
+.progress-track > span {
+  transition: width 420ms linear;
+}
+.processing-visual,
+.processing-ring {
+  will-change: transform;
+}
+.processing-ring {
+  animation: ux-processing-breathe 1.25s ease-in-out infinite;
+}
+
+/* Slightly faster visual acknowledgement for common controls. */
+.button,
+.icon-button,
+.text-button,
+.toggle {
+  touch-action: manipulation;
+}
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.text-button:active:not(:disabled) {
+  transform: scale(.975);
+}
+
+@keyframes ux-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes ux-sync-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .78; transform: scale(.96); }
+}
+@keyframes ux-processing-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+@keyframes ux-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes ux-boot-progress {
+  0% { transform: translateX(-115%); }
+  55% { transform: translateX(105%); }
+  100% { transform: translateX(245%); }
+}
+
+@media (max-width: 760px) {
+  .login-brand-lockup .brand-mark {
+    width: 88px !important;
+    height: 88px !important;
+    flex-basis: 88px !important;
+  }
+  .login-brand-lockup > span:last-child { font-size: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-card,
+  .boot-progress span,
+  .action-pending::after,
+  [data-pending='true'] .toggle,
+  .processing-ring {
+    animation: none !important;
+  }
+  .toggle,
+  .toggle > span,
+  [data-pending='true'],
+  .progress-track > span,
+  .button,
+  .icon-button,
+  .text-button {
+    transition-duration: 0.01ms !important;
+  }
+}

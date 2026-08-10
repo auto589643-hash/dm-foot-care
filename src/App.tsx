@@ -224,7 +224,7 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  if (restoring) return <main className="login-page"><section className="login-panel"><div className="login-form-wrap"><span className="eyebrow">DM Foot Care</span><h2>กำลังตรวจสอบ session</h2><p>กรุณารอสักครู่…</p></div></section></main>
+  if (restoring) return <main className="app-boot" aria-live="polite"><div className="boot-card"><BrandMark /><div className="boot-copy"><strong>DM Foot Care</strong><span>กำลังเตรียมข้อมูล…</span></div><div className="boot-progress"><span /></div></div></main>
   if (!profile) return <LoginScreen onLogin={login} authService={integrations?.auth} />
 
   const navItems = profile.role === 'admin' ? doctorNav : patientNav
@@ -352,18 +352,18 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
   return (
     <main className="login-page">
       <section className="login-visual" aria-label="DM Foot Care">
-        <div className="brand brand-on-blue"><BrandMark /><span>DM Foot Care</span></div>
+        <div className="brand brand-on-blue login-brand-lockup"><BrandMark /><span>DM Foot Care</span></div>
         <div className="login-message">
           <span className="eyebrow eyebrow-light">ดูแลอย่างต่อเนื่อง</span>
           <h1>ทุกก้าว เริ่มจาก<br />การใส่ใจเท้า</h1>
-          <p>ติดตามสุขภาพเท้าอย่างเป็นขั้นตอน พร้อมคำแนะนำภายใต้การดูแลของแพทย์</p>
+          <p>ติดตามสุขภาพเท้าอย่างเป็นขั้นตอน พร้อมคำแนะนำสำหรับการดูแลอย่างต่อเนื่อง</p>
         </div>
         <FourFrameIllustration />
         <div className="clinical-note"><ShieldCheck size={18} /><span>ข้อมูลและรูปภาพจัดเก็บแบบเป็นส่วนตัว</span></div>
       </section>
 
       <section className="login-panel">
-        <div className="mobile-login-brand brand"><BrandMark /><span>DM Foot Care</span></div>
+        <div className="mobile-login-brand brand login-brand-lockup"><BrandMark /><span>DM Foot Care</span></div>
         <div className="login-form-wrap">
           {mode === 'login' ? <><div className="login-heading">
             <span className="eyebrow">ยินดีต้อนรับ</span>
@@ -376,7 +376,7 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
             <label className="field-label" htmlFor="pin">PIN 4 หลัก</label>
             <div className="input-wrap"><ShieldCheck size={20} /><input id="pin" inputMode="numeric" autoComplete="current-password" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} placeholder="••••" /></div>
             {error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}
-            <button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button>
+            <button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button>
           </form>
           {authService ? <button className="login-mode-switch" type="button" onClick={() => { setMode('register'); setError('') }}>ยังไม่มีบัญชี? ลงทะเบียนใช้งาน</button> : null}
           {!authService ? <div className="demo-access">
@@ -388,7 +388,7 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
               </div>
             ) : null}
           </div> : null}
-          <p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" autoComplete="username" value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" /><label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" autoComplete="name" value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} /><div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" type="date" value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} /></div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} /></div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError('') }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
+          <p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" autoComplete="username" value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" /><label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" autoComplete="name" value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} /><div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" type="date" value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} /></div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} /></div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError('') }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
         </div>
       </section>
     </main>
@@ -566,6 +566,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   const [completedExam, setCompletedExam] = useState<Examination | null>(null)
   const [isFinalizing, setIsFinalizing] = useState(false)
   const examinationIdRef = useRef(integrations ? '' : 'EX-DEMO-1')
+  const draftJobRef = useRef<Promise<boolean> | null>(null)
   const archiveRef = useRef<OriginalImageArchive>(integrations?.archive ?? new InMemoryOriginalImageArchive())
   const repositoryRef = useRef<ExaminationRepository>(integrations?.repository ?? new InMemoryExaminationRepository())
   const thumbnailServiceRef = useRef<ThumbnailService>(integrations?.thumbnails ?? new BrowserThumbnailService())
@@ -581,22 +582,26 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       examinationIdRef.current = `EX-DEMO-${Date.now()}`
       return true
     }
-    try {
-      const draft = await repositoryRef.current.createDraft(profile.id)
+    if (draftJobRef.current) return draftJobRef.current
+    const job = repositoryRef.current.createDraft(profile.id).then((draft) => {
       examinationIdRef.current = draft.id
-      void integrations?.audit.append({ actorId: profile.id, eventType: 'examination_created', entityType: 'examination', entityId: draft.id, payload: { status: draft.status } }).catch(() => {})
+      void integrations.audit.append({ actorId: profile.id, eventType: 'examination_created', entityType: 'examination', entityId: draft.id, payload: { status: draft.status } }).catch(() => {})
       return true
-    } catch {
+    }).catch(() => {
       setAnalysisError('เริ่มรายการตรวจไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่')
       return false
-    }
+    }).finally(() => {
+      draftJobRef.current = null
+    })
+    draftJobRef.current = job
+    return job
   }
 
-  const beginAnalysis = async () => {
+  const beginAnalysis = () => {
     setAnalysisError('')
-    if (!(await ensureExaminationDraft())) return
     setProcessStep(0)
     setStage('processing')
+    void ensureExaminationDraft()
   }
 
   useLayoutEffect(() => {
@@ -627,7 +632,9 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     ]
     const provider: FootAssessmentProvider = integrations?.provider ?? new MockFootAssessmentProvider(toMockDiseaseMaster(diseaseRecords))
     const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
-    void photosToBlobs(capturedPhotos).then((images) => {
+    const draftReadyJob = examinationIdRef.current ? Promise.resolve(true) : (draftJobRef.current ?? Promise.resolve(false))
+    void Promise.all([draftReadyJob, photosToBlobs(capturedPhotos)]).then(([draftReady, images]) => {
+      if (!draftReady) throw new Error('Could not initialize examination draft')
       if (!thumbnailJobRef.current) {
         const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
         thumbnailJobRef.current = thumbnailJob
@@ -656,7 +663,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       setAiFindings(analysis.findings)
       setConfirmedFindings(cloneFindings(analysis.findings))
       setProcessStep(3)
-      window.setTimeout(() => { if (!cancelled) setStage('human-review') }, 450)
+      window.setTimeout(() => { if (!cancelled) setStage('human-review') }, 120)
     }).catch((error) => {
       if (cancelled) return
       console.error('Foot analysis workflow failed', error)
@@ -712,13 +719,13 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   }
 
   const reset = () => {
-    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings(cloneFindings(mockFindings)); setConfirmedFindings(cloneFindings(mockFindings)); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; examinationIdRef.current = integrations ? '' : `EX-DEMO-${Date.now()}`; archiveRef.current = integrations?.archive ?? new InMemoryOriginalImageArchive(); repositoryRef.current = integrations?.repository ?? new InMemoryExaminationRepository(); thumbnailServiceRef.current = integrations?.thumbnails ?? new BrowserThumbnailService(); setStage('intro')
+    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings(cloneFindings(mockFindings)); setConfirmedFindings(cloneFindings(mockFindings)); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; draftJobRef.current = null; examinationIdRef.current = integrations ? '' : `EX-DEMO-${Date.now()}`; archiveRef.current = integrations?.archive ?? new InMemoryOriginalImageArchive(); repositoryRef.current = integrations?.repository ?? new InMemoryExaminationRepository(); thumbnailServiceRef.current = integrations?.thumbnails ?? new BrowserThumbnailService(); setStage('intro')
   }
 
   if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
-  if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => step === 3 ? setStage('review') : setStep((value) => value + 1)} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
+  if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
   if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
-  if (stage === 'processing') return <ProcessingScreen current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
+  if (stage === 'processing') return <ProcessingScreen key={analysisAttempt} current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
   if (stage === 'human-review') return <HumanReview photos={photos} diseaseRecords={diseaseRecords} aiFindings={aiFindings} confirmedFindings={confirmedFindings} setConfirmedFindings={setConfirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
   return completedExam ? <SummaryReport examination={completedExam} photos={thumbnails} diseaseRecords={diseaseRecords} onHome={onHome} onRestart={reset} /> : null
 }
@@ -952,7 +959,19 @@ function ProcessingScreen({ current, error, onRetry }: { current: number; error:
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
-  const analysisProgress = Math.min(92, 18 + current * 25)
+  const targetProgress = Math.min(92, 18 + current * 25)
+  const [driftProgress, setDriftProgress] = useState(18)
+  const analysisProgress = Math.max(targetProgress, driftProgress)
+  useEffect(() => {
+    if (error || !online) return
+    const timer = window.setInterval(() => {
+      setDriftProgress((value) => {
+        const currentProgress = Math.max(value, targetProgress)
+        return Math.min(94, currentProgress + (currentProgress < 70 ? 3 : currentProgress < 88 ? 2 : 1))
+      })
+    }, 480)
+    return () => window.clearInterval(timer)
+  }, [error, online, targetProgress])
   return (
     <div className="processing-screen">
       <div className="processing-visual"><div className="processing-ring"><Footprints size={42} /></div><span className="orbit-dot" /></div>
@@ -987,9 +1006,9 @@ function HumanReview({ photos, diseaseRecords, aiFindings, confirmedFindings, se
           </article>
         ))}
       </div>
-      <div className="review-explainer"><Info size={19} /><p>ผล AI ต้นฉบับจะถูกเก็บแยกจากรายการที่คุณยืนยัน เพื่อให้แพทย์ตรวจสอบย้อนหลังได้</p></div>
+      <div className="review-explainer"><Info size={19} /><p>ผล AI ต้นฉบับจะถูกเก็บแยกจากรายการที่คุณยืนยัน เพื่อให้ผู้ดูแลตรวจสอบย้อนหลังได้</p></div>
       {submitError ? <div className="form-error review-submit-error" role="alert"><AlertTriangle size={18} />{submitError}</div> : null}
-      <button className="button button-primary button-large" type="button" disabled={isSubmitting} onClick={onSubmit}><FileCheck2 size={21} />{isSubmitting ? 'กำลังเตรียมภาพสรุป…' : 'ยืนยันและส่งผลตรวจ'}</button>
+      <button className={isSubmitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="button" disabled={isSubmitting} onClick={onSubmit}><FileCheck2 size={21} />{isSubmitting ? 'กำลังเตรียมภาพสรุป…' : 'ยืนยันและส่งผลตรวจ'}</button>
       {selectedPhoto ? <PhotoViewer position={selectedPhoto} photo={photos[selectedPhoto]} onClose={() => setSelectedPhoto(null)} /> : null}
     </div>
   )
@@ -1016,8 +1035,8 @@ function SummaryReport({ examination, photos, diseaseRecords, onHome, onRestart 
       </section>
       <section className="summary-images"><div className="section-heading"><div><span className="eyebrow">ภาพจากการตรวจ</span><h2>ภาพเท้า 4 มุม</h2></div><span className="status-pill success"><CircleCheck size={15} />ครบ 4 ภาพ</span></div><div className="summary-photo-grid">{footSteps.map((step) => { const photo = photos[step.id]; return <div className="summary-photo" key={step.id} style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})` } : undefined}>{!photo || photo === 'demo' ? <Footprints size={26} /> : null}<span>{step.short}</span></div> })}</div></section>
       {findings.length ? <section className="summary-section"><div className="section-heading"><div><span className="eyebrow">ผลที่ยืนยันแล้ว</span><h2>รายการที่พบ</h2></div></div><div className="finding-list">{findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />)}</div></section> : <section className="no-finding-card"><CircleCheck size={24} /><div><h2>ยังไม่พบภาวะจากรายการที่ตรวจ</h2><p>ผลนี้ไม่ได้แปลว่าไม่มีโรคแน่นอน หากมีอาการผิดปกติ ให้เฝ้าระวังและติดต่อแพทย์</p></div></section>}
-      {comparisonFinding ? <section className="comparison-card"><div className="comparison-icon"><TrendingDown size={24} /></div><div><span className="eyebrow">เทียบกับครั้งก่อน</span><h2>{comparisonFinding.name} {comparisonFinding.comparison}</h2><p>ผลเปรียบเทียบจากการตรวจครั้งก่อน ควรติดตามตามคำแนะนำของแพทย์</p></div></section> : null}
-      <section className="recommendation-card"><div className="section-heading"><div><span className="eyebrow">คำแนะนำจากแพทย์</span><h2>ดูแลต่อเนื่องหลังการตรวจ</h2></div><HeartPulse size={24} /></div><ul>{(recommendationLines.length ? recommendationLines : fallbackRecommendations).map((recommendation) => <li key={recommendation}><Check size={17} />{recommendation}</li>)}</ul></section>
+      {comparisonFinding ? <section className="comparison-card"><div className="comparison-icon"><TrendingDown size={24} /></div><div><span className="eyebrow">เทียบกับครั้งก่อน</span><h2>{comparisonFinding.name} {comparisonFinding.comparison}</h2><p>ผลเปรียบเทียบจากการตรวจครั้งก่อน ควรติดตามตามคำแนะนำ</p></div></section> : null}
+      <section className="recommendation-card"><div className="section-heading"><div><span className="eyebrow">คำแนะนำ</span><h2>ดูแลต่อเนื่องหลังการตรวจ</h2></div><HeartPulse size={24} /></div><ul>{(recommendationLines.length ? recommendationLines : fallbackRecommendations).map((recommendation) => <li key={recommendation}><Check size={17} />{recommendation}</li>)}</ul></section>
       <ClinicalDisclaimer />
       <button className="button button-primary button-large" type="button" onClick={onHome}>กลับหน้าหลัก</button>
       <button className="button button-ghost" type="button" onClick={onRestart}>เริ่มการตรวจใหม่</button>
@@ -1109,7 +1128,7 @@ function KnowledgePage({ articles, diseaseRecords, showToast }: { articles: Know
   const severityOptions = ['ทั้งหมด', 'ทุกระดับ', 'เล็กน้อย', 'ปานกลาง', 'รุนแรง'] as const
   const filtered = useMemo(() => articles.filter((article) => (category === 'ทั้งหมด' || article.category === category) && (diseaseFilter === 'ทั้งหมด' || article.diseaseId === diseaseFilter) && (severityFilter === 'ทั้งหมด' || article.severity === severityFilter) && `${article.title} ${article.summary} ${article.diseaseId ?? ''}`.toLowerCase().includes(query.toLowerCase())), [articles, query, category, diseaseFilter, severityFilter])
   return (
-    <div className="page knowledge-page"><PageTitle eyebrow="ความรู้จากทีมแพทย์" title="คลังความรู้ดูแลเท้า" description="คำแนะนำที่อ่านง่ายและผ่านการจัดทำโดยทีมดูแล" /><div className="knowledge-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหา เช่น ผิวแห้ง หนังด้าน" aria-label="ค้นหาคลังความรู้" /></label><div className="category-chips" aria-label="กรองตามหมวดหมู่">{categories.map((item) => <button className={category === item ? 'active' : ''} type="button" key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="knowledge-filter-row"><label><span>ภาวะ</span><select aria-label="กรองตามภาวะ" value={diseaseFilter} onChange={(event) => setDiseaseFilter(event.target.value)}>{diseaseOptions.map((id) => <option value={id} key={id}>{id === 'ทั้งหมด' ? id : `${id} · ${diseaseRecords.find((disease) => disease.id === id)?.name ?? id}`}</option>)}</select></label><label><span>ระดับความรุนแรง</span><select aria-label="กรองตามระดับความรุนแรง" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>{severityOptions.map((severity) => <option value={severity} key={severity}>{severity}</option>)}</select></label></div></div>{filtered.length ? <div className="article-grid">{filtered.map((article, index) => <article className={`article-card tone-${article.tone}`} key={article.id}><div className="article-visual">{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={30} />}<span>{index + 1}</span></div><div className="article-body"><div><span className="category-label">{article.category}</span><span>{article.severity} · {article.readTime}</span></div><h2>{article.title}</h2><p>{article.summary}</p><button className="card-link" type="button" onClick={() => setSelected(article)}>อ่านคำแนะนำ <ChevronRight size={18} /> </button></div></article>)}</div> : <div className="empty-state"><Search size={32} /><h2>ยังไม่พบหัวข้อนี้</h2><p>ลองค้นด้วยคำที่สั้นลง หรือเลือก “ทั้งหมด” เพื่อดูคำแนะนำที่มี</p><button className="button button-secondary" type="button" onClick={() => { setQuery(''); setCategory('ทั้งหมด'); setDiseaseFilter('ทั้งหมด'); setSeverityFilter('ทั้งหมด') }}>ดูบทความทั้งหมด</button></div>}{selected ? <ArticleModal article={selected} onClose={() => setSelected(null)} onSaved={() => { showToast('บันทึกไว้อ่านภายหลังแล้ว'); setSelected(null) }} /> : null}</div>
+    <div className="page knowledge-page"><PageTitle eyebrow="ความรู้สำหรับการดูแล" title="คลังความรู้ดูแลเท้า" description="คำแนะนำที่อ่านง่ายและผ่านการจัดทำโดยทีมดูแล" /><div className="knowledge-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหา เช่น ผิวแห้ง หนังด้าน" aria-label="ค้นหาคลังความรู้" /></label><div className="category-chips" aria-label="กรองตามหมวดหมู่">{categories.map((item) => <button className={category === item ? 'active' : ''} type="button" key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="knowledge-filter-row"><label><span>ภาวะ</span><select aria-label="กรองตามภาวะ" value={diseaseFilter} onChange={(event) => setDiseaseFilter(event.target.value)}>{diseaseOptions.map((id) => <option value={id} key={id}>{id === 'ทั้งหมด' ? id : `${id} · ${diseaseRecords.find((disease) => disease.id === id)?.name ?? id}`}</option>)}</select></label><label><span>ระดับความรุนแรง</span><select aria-label="กรองตามระดับความรุนแรง" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>{severityOptions.map((severity) => <option value={severity} key={severity}>{severity}</option>)}</select></label></div></div>{filtered.length ? <div className="article-grid">{filtered.map((article, index) => <article className={`article-card tone-${article.tone}`} key={article.id}><div className="article-visual">{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={30} />}<span>{index + 1}</span></div><div className="article-body"><div><span className="category-label">{article.category}</span><span>{article.severity} · {article.readTime}</span></div><h2>{article.title}</h2><p>{article.summary}</p><button className="card-link" type="button" onClick={() => setSelected(article)}>อ่านคำแนะนำ <ChevronRight size={18} /> </button></div></article>)}</div> : <div className="empty-state"><Search size={32} /><h2>ยังไม่พบหัวข้อนี้</h2><p>ลองค้นด้วยคำที่สั้นลง หรือเลือก “ทั้งหมด” เพื่อดูคำแนะนำที่มี</p><button className="button button-secondary" type="button" onClick={() => { setQuery(''); setCategory('ทั้งหมด'); setDiseaseFilter('ทั้งหมด'); setSeverityFilter('ทั้งหมด') }}>ดูบทความทั้งหมด</button></div>}{selected ? <ArticleModal article={selected} onClose={() => setSelected(null)} onSaved={() => { showToast('บันทึกไว้อ่านภายหลังแล้ว'); setSelected(null) }} /> : null}</div>
   )
 }
 
@@ -1125,13 +1144,13 @@ function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { 
   useEffect(() => {
     if (!adminService) return
     let cancelled = false
-    void Promise.all([adminService.listUsers(), adminService.listDiseases(), adminService.listKnowledge()]).then(([users, diseaseList, articles]) => {
-      if (cancelled) return
-      setUserRecords(users)
-      setDiseaseRecords(diseaseList)
-      setKnowledgeRecords(articles)
-    }).catch(() => {
-      if (!cancelled) showToast('โหลดข้อมูล Doctor workspace ไม่สำเร็จ กรุณาลองใหม่')
+    const requests = [
+      adminService.listUsers().then((records) => { if (!cancelled) setUserRecords(records) }),
+      adminService.listDiseases().then((records) => { if (!cancelled) setDiseaseRecords(records) }),
+      adminService.listKnowledge().then((records) => { if (!cancelled) setKnowledgeRecords(records) }),
+    ]
+    void Promise.allSettled(requests).then((results) => {
+      if (!cancelled && results.some((result) => result.status === 'rejected')) showToast('โหลดข้อมูล Admin workspace บางส่วนไม่สำเร็จ กรุณาลองใหม่')
     })
     return () => { cancelled = true }
   }, [adminService, showToast])
@@ -1147,7 +1166,7 @@ function DoctorHome({ onNavigate, showToast, users, diseaseRecords, adminService
   const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null)
   const activeCount = users.filter((user) => user.status === 'active').length
   const recordsWithHistory = users.filter((user) => user.lastExam !== 'ยังไม่มีประวัติ').length
-  return <div className="page admin-page"><PageTitle eyebrow="Doctor workspace" title="สวัสดี พญ. มาลี" description="ภาพรวมกลุ่มทดลอง DM Foot Care วันนี้" action={<button className="button button-primary" type="button" onClick={() => onNavigate('users')}><Plus size={18} />เพิ่มผู้ใช้งาน</button>} /><div className="admin-stat-grid"><AdminStat icon={Users} label="ผู้ใช้งาน Active" value={String(activeCount)} note={`จากทั้งหมด ${users.length} คน`} tone="blue" /><AdminStat icon={ClipboardCheck} label="มีประวัติการตรวจ" value={String(recordsWithHistory)} note="จากข้อมูลผู้ใช้งานปัจจุบัน" tone="teal" /><AdminStat icon={AlertTriangle} label="ควรติดตาม" value="3" note="มีระดับรุนแรง 1 คน" tone="amber" /><AdminStat icon={Activity} label="ตรวจล่าสุด" value={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.lastExam ?? '—'} note={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.username ?? 'ยังไม่มีข้อมูล'} tone="blue" /></div><div className="admin-grid"><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">ต้องตรวจสอบ</span><h2>ผู้ใช้ที่ควรติดตาม</h2></div><button className="text-link" type="button" onClick={() => onNavigate('users')}>ดูทั้งหมด</button></div><div className="followup-list"><FollowupRow initials="ปม" name="ประเสริฐ มั่นคง" code="DM002" issue="แผลที่เท้า · รุนแรง" time="7 ส.ค. 2569" severe /><FollowupRow initials="นส" name="นภา แสงทอง" code="DM003" issue="ผิวแห้ง · ปานกลาง" time="5 ส.ค. 2569" /><FollowupRow initials="วด" name="วิชัย ดีพร้อม" code="DM004" issue="ไม่ได้ตรวจ 11 วัน" time="28 ก.ค. 2569" /></div></section><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">7 วันที่ผ่านมา</span><h2>กิจกรรมการตรวจ</h2></div><span className="status-pill success"><TrendingUp size={15} />12 ครั้ง</span></div><div className="activity-chart">{[32,58,44,72,48,90,66].map((height, index) => <div key={index}><span style={{ height: `${height}%` }} /><small>{['อา','จ','อ','พ','พฤ','ศ','ส'][index]}</small></div>)}</div><div className="chart-legend"><span><i />การตรวจที่เสร็จสมบูรณ์</span><strong>เฉลี่ย 1.7 ครั้ง/วัน</strong></div></section></div><section className="admin-panel recent-panel"><div className="section-heading"><div><span className="eyebrow">กิจกรรมล่าสุด</span><h2>การตรวจล่าสุด</h2></div><button className="text-link" type="button" onClick={() => { onNavigate('users'); showToast('เปิดรายการผู้ใช้งานแล้ว') }}>ดูประวัติทั้งหมด</button></div><AdminTable users={users} onSelect={(user, index) => { if (adminService) setSelectedUser(user); else setSelectedExam(examinations[index] ?? examinations[0]) }} /></section>{selectedExam ? <ExaminationDetail exam={selectedExam} diseaseRecords={diseaseRecords} onClose={() => setSelectedExam(null)} /> : null}{selectedUser ? <UserHistoryModal user={selectedUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setSelectedUser(null)} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="Admin workspace" title="ภาพรวมการดูแล" description="ภาพรวมกลุ่มทดลอง DM Foot Care วันนี้" action={<button className="button button-primary" type="button" onClick={() => onNavigate('users')}><Plus size={18} />เพิ่มผู้ใช้งาน</button>} /><div className="admin-stat-grid"><AdminStat icon={Users} label="ผู้ใช้งาน Active" value={String(activeCount)} note={`จากทั้งหมด ${users.length} คน`} tone="blue" /><AdminStat icon={ClipboardCheck} label="มีประวัติการตรวจ" value={String(recordsWithHistory)} note="จากข้อมูลผู้ใช้งานปัจจุบัน" tone="teal" /><AdminStat icon={AlertTriangle} label="ควรติดตาม" value="3" note="มีระดับรุนแรง 1 คน" tone="amber" /><AdminStat icon={Activity} label="ตรวจล่าสุด" value={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.lastExam ?? '—'} note={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.username ?? 'ยังไม่มีข้อมูล'} tone="blue" /></div><div className="admin-grid"><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">ต้องตรวจสอบ</span><h2>ผู้ใช้ที่ควรติดตาม</h2></div><button className="text-link" type="button" onClick={() => onNavigate('users')}>ดูทั้งหมด</button></div><div className="followup-list"><FollowupRow initials="ปม" name="ประเสริฐ มั่นคง" code="DM002" issue="แผลที่เท้า · รุนแรง" time="7 ส.ค. 2569" severe /><FollowupRow initials="นส" name="นภา แสงทอง" code="DM003" issue="ผิวแห้ง · ปานกลาง" time="5 ส.ค. 2569" /><FollowupRow initials="วด" name="วิชัย ดีพร้อม" code="DM004" issue="ไม่ได้ตรวจ 11 วัน" time="28 ก.ค. 2569" /></div></section><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">7 วันที่ผ่านมา</span><h2>กิจกรรมการตรวจ</h2></div><span className="status-pill success"><TrendingUp size={15} />12 ครั้ง</span></div><div className="activity-chart">{[32,58,44,72,48,90,66].map((height, index) => <div key={index}><span style={{ height: `${height}%` }} /><small>{['อา','จ','อ','พ','พฤ','ศ','ส'][index]}</small></div>)}</div><div className="chart-legend"><span><i />การตรวจที่เสร็จสมบูรณ์</span><strong>เฉลี่ย 1.7 ครั้ง/วัน</strong></div></section></div><section className="admin-panel recent-panel"><div className="section-heading"><div><span className="eyebrow">กิจกรรมล่าสุด</span><h2>การตรวจล่าสุด</h2></div><button className="text-link" type="button" onClick={() => { onNavigate('users'); showToast('เปิดรายการผู้ใช้งานแล้ว') }}>ดูประวัติทั้งหมด</button></div><AdminTable users={users} onSelect={(user, index) => { if (adminService) setSelectedUser(user); else setSelectedExam(examinations[index] ?? examinations[0]) }} /></section>{selectedExam ? <ExaminationDetail exam={selectedExam} diseaseRecords={diseaseRecords} onClose={() => setSelectedExam(null)} /> : null}{selectedUser ? <UserHistoryModal user={selectedUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setSelectedUser(null)} /> : null}</div>
 }
 
 function AdminStat({ icon: Icon, label, value, note, tone }: { icon: typeof Users; label: string; value: string; note: string; tone: string }) {
@@ -1169,24 +1188,31 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
   const [editing, setEditing] = useState<UserRecord | null>(null)
   const [creating, setCreating] = useState(false)
   const [historyUser, setHistoryUser] = useState<UserRecord | null>(null)
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set())
   const filtered = users.filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase())).sort((left, right) => {
     const priority = { pending: 0, active: 1, inactive: 2 }
     return priority[left.status] - priority[right.status] || left.username.localeCompare(right.username)
   })
   const pendingCount = users.filter((user) => user.status === 'pending').length
   const toggle = (id: string) => {
+    if (pendingUserIds.has(id)) return
     const user = users.find((item) => item.id === id)
     if (!user) return
+    const previousStatus = user.status
     const nextStatus = user.status === 'active' ? 'inactive' : 'active'
-    if (adminService) {
-      void adminService.setUserStatus(id, nextStatus).then(() => {
-        setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
-        void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
-        showToast(`${user.status === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
-      }).catch(() => showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ'))
-      return
-    }
     setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
+    if (adminService) {
+      setPendingUserIds((current) => new Set(current).add(id))
+      void adminService.setUserStatus(id, nextStatus).then(() => {
+        void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
+        showToast(`${previousStatus === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
+      }).catch(() => {
+        setUsers((current) => current.map((item) => item.id === id ? { ...item, status: previousStatus } : item))
+        showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
+      }).finally(() => {
+        setPendingUserIds((current) => { const next = new Set(current); next.delete(id); return next })
+      })
+    }
   }
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveUser = async (draft: UserFormDraft) => {
@@ -1216,7 +1242,7 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
     }
     closeForm()
   }
-  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id} data-pending={pendingUserIds.has(user.id) ? 'true' : undefined}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
 }
 
 function UserHistoryModal({ user, diseaseRecords = diseases, adminService, onClose }: { user: UserRecord; diseaseRecords?: Disease[]; adminService?: AdminService; onClose: () => void }) {
@@ -1235,42 +1261,57 @@ function UserHistoryModal({ user, diseaseRecords = diseases, adminService, onClo
     })
     return () => { cancelled = true }
   }, [adminService, user.id])
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังสำหรับการติดตามโดยแพทย์</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ')}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}</div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังสำหรับการติดตาม</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ')}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}</div>
 }
 
 function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void> }) {
   const [draft, setDraft] = useState<Omit<UserRecord, 'id' | 'lastExam'> & { pin: string }>(() => user
     ? { username: user.username, name: user.name, dateOfBirth: user.dateOfBirth, age: calculateAge(user.dateOfBirth), occupation: user.occupation, pinConfigured: user.pinConfigured, status: user.status, pin: '' }
     : { username: '', name: '', dateOfBirth: '1960-01-01', age: 0, occupation: '', pinConfigured: false, status: 'active', pin: '' })
+  const [isSaving, setIsSaving] = useState(false)
   const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!draft.username.trim() || !draft.name.trim() || !draft.dateOfBirth || !draft.occupation.trim()) return
     const validPin = draft.pin === '' ? Boolean(user?.pinConfigured) : /^\d{4}$/.test(draft.pin)
     if (!validPin) return
     const safeDraft: Omit<UserRecord, 'id' | 'lastExam'> = { username: draft.username.trim().toUpperCase(), name: draft.name.trim(), dateOfBirth: draft.dateOfBirth, age: calculateAge(draft.dateOfBirth), occupation: draft.occupation.trim(), pinConfigured: Boolean(draft.pin || draft.pinConfigured), status: draft.status }
-    onSave({ ...safeDraft, ...(draft.pin ? { pin: draft.pin } : {}) })
+    setIsSaving(true)
+    try {
+      await onSave({ ...safeDraft, ...(draft.pin ? { pin: draft.pin } : {}) })
+    } finally {
+      setIsSaving(false)
+    }
   }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title"><header><div><span className="eyebrow">{user ? 'แก้ไขบัญชี' : 'บัญชีใหม่'}</span><h2 id="user-form-title">{user ? `แก้ไข ${user.username}` : 'เพิ่มผู้ใช้งาน'}</h2><p>ข้อมูลนี้ใช้สำหรับกลุ่มทดลองและสามารถแก้ไขภายหลังได้</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="form-username">Username</label><input id="form-username" value={draft.username} onChange={(event) => update('username', event.target.value)} placeholder="เช่น DM005" autoComplete="off" /><label className="field-label" htmlFor="form-name">ชื่อ-นามสกุล</label><input id="form-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="ชื่อผู้ใช้งาน" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="form-dob">วันเดือนปีเกิด</label><input id="form-dob" type="date" value={draft.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /><div className="derived-metric"><span>อายุ / Generation</span><strong>{calculateAge(draft.dateOfBirth)} ปี · {calculateGeneration(draft.dateOfBirth)}</strong></div></div><div><label className="field-label" htmlFor="form-status">สถานะ</label><select id="form-status" value={draft.status} onChange={(event) => update('status', event.target.value as UserRecord['status'])}><option value="pending">รออนุมัติ</option><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select></div></div><label className="field-label" htmlFor="form-occupation">อาชีพ</label><input id="form-occupation" value={draft.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="อาชีพ" /><label className="field-label" htmlFor="form-pin">PIN เริ่มต้น (4 หลัก){user ? ' · กรอกใหม่เมื่อเปลี่ยน PIN' : ''}</label><input id="form-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={draft.pin} onChange={(event) => update('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder={user ? 'เว้นว่างเพื่อใช้ PIN เดิม' : 'เช่น 1234'} autoComplete="new-password" /><small className="field-helper">ระบบจะไม่แสดงหรือเก็บ PIN ดิบในหน้าจอจัดการ หากต้องการเปลี่ยน PIN ให้กรอกเลขใหม่แล้วบันทึก</small><div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกข้อมูล</button></div></form></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title"><header><div><span className="eyebrow">{user ? 'แก้ไขบัญชี' : 'บัญชีใหม่'}</span><h2 id="user-form-title">{user ? `แก้ไข ${user.username}` : 'เพิ่มผู้ใช้งาน'}</h2><p>ข้อมูลนี้ใช้สำหรับกลุ่มทดลองและสามารถแก้ไขภายหลังได้</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="form-username">Username</label><input id="form-username" value={draft.username} onChange={(event) => update('username', event.target.value)} placeholder="เช่น DM005" autoComplete="off" /><label className="field-label" htmlFor="form-name">ชื่อ-นามสกุล</label><input id="form-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="ชื่อผู้ใช้งาน" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="form-dob">วันเดือนปีเกิด</label><input id="form-dob" type="date" value={draft.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /><div className="derived-metric"><span>อายุ / Generation</span><strong>{calculateAge(draft.dateOfBirth)} ปี · {calculateGeneration(draft.dateOfBirth)}</strong></div></div><div><label className="field-label" htmlFor="form-status">สถานะ</label><select id="form-status" value={draft.status} onChange={(event) => update('status', event.target.value as UserRecord['status'])}><option value="pending">รออนุมัติ</option><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select></div></div><label className="field-label" htmlFor="form-occupation">อาชีพ</label><input id="form-occupation" value={draft.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="อาชีพ" /><label className="field-label" htmlFor="form-pin">PIN เริ่มต้น (4 หลัก){user ? ' · กรอกใหม่เมื่อเปลี่ยน PIN' : ''}</label><input id="form-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={draft.pin} onChange={(event) => update('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder={user ? 'เว้นว่างเพื่อใช้ PIN เดิม' : 'เช่น 1234'} autoComplete="new-password" /><small className="field-helper">ระบบจะไม่แสดงหรือเก็บ PIN ดิบในหน้าจอจัดการ หากต้องการเปลี่ยน PIN ให้กรอกเลขใหม่แล้วบันทึก</small><div className="admin-form-actions"><button className="button button-secondary" type="button" disabled={isSaving} onClick={onClose}>ยกเลิก</button><button className={isSaving ? 'button button-primary action-pending' : 'button button-primary'} type="submit" disabled={isSaving}>{isSaving ? 'กำลังบันทึก…' : 'บันทึกข้อมูล'}</button></div></form></section></div>
 }
 
 function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, adminService, auditLogger }: { diseases: typeof diseases; setDiseases: React.Dispatch<React.SetStateAction<typeof diseases>>; showToast: (text: string) => void; adminService?: AdminService; auditLogger?: AuditLogger }) {
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Disease | null>(null)
   const [creating, setCreating] = useState(false)
+  const [pendingDiseaseIds, setPendingDiseaseIds] = useState<Set<string>>(() => new Set())
   const filtered = diseaseRecords.filter((disease) => `${disease.name} ${disease.id} ${disease.category}`.toLowerCase().includes(query.toLowerCase()))
   const toggle = (id: string) => {
+    if (pendingDiseaseIds.has(id)) return
     const disease = diseaseRecords.find((item) => item.id === id)
     if (!disease) return
+    const previousActive = disease.active
+    const nextActive = !previousActive
+    setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: nextActive } : item))
     if (adminService) {
-      void adminService.setDiseaseActive(id, !disease.active).then(() => {
-        setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item))
-        void auditLogger?.append({ actorId: null, eventType: 'disease_master_updated', entityType: 'disease', entityId: id, payload: { action: 'status_changed', active: !disease.active } }).catch(() => {})
-        showToast(`${disease.active ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name} แล้ว`)
-      }).catch(() => showToast('เปลี่ยนสถานะ Disease ไม่สำเร็จ'))
+      setPendingDiseaseIds((current) => new Set(current).add(id))
+      void adminService.setDiseaseActive(id, nextActive).then(() => {
+        showToast(`${previousActive ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name} แล้ว`)
+      }).catch(() => {
+        setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: previousActive } : item))
+        showToast('เปลี่ยนสถานะ Disease ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
+      }).finally(() => {
+        setPendingDiseaseIds((current) => { const next = new Set(current); next.delete(id); return next })
+      })
       return
     }
-    setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item))
+    void auditLogger?.append({ actorId: null, eventType: 'disease_master_updated', entityType: 'disease', entityId: id, payload: { action: 'status_changed', active: nextActive } }).catch(() => {})
   }
   const openCreate = () => { setEditing(null); setCreating(true) }
   const closeForm = () => { setEditing(null); setCreating(false) }
@@ -1298,7 +1339,7 @@ function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, a
     }
     closeForm()
   }
-  return <div className="page admin-page"><PageTitle eyebrow="เกณฑ์การประเมิน" title="Disease Master" description="AI จะประเมินเฉพาะรายการที่เปิดใช้งานและตามเกณฑ์ที่แพทย์กำหนด" action={<button className="button button-primary" type="button" onClick={openCreate}><Plus size={18} />เพิ่มรายการ</button>} /><div className="master-alert"><ShieldCheck size={20} /><div><strong>แพทย์เป็นผู้ควบคุมรายการทั้งหมด</strong><p>AI ไม่มีสิทธิ์สร้างชื่อภาวะหรือระดับความรุนแรงใหม่</p></div></div><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหารายการภาวะ" placeholder="ค้นหาชื่อ รหัส หรือหมวดหมู่" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>เปิดใช้ {diseaseRecords.filter((item) => item.active).length} รายการ</span></div><div className="disease-grid">{filtered.map((disease) => <article className={disease.active ? '' : 'inactive'} key={disease.id}><header><span className="disease-code">{disease.id}</span><button className={disease.active ? 'toggle on' : 'toggle'} type="button" role="switch" aria-checked={disease.active} aria-label={`${disease.active ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name}`} onClick={() => { toggle(disease.id); showToast(`${disease.active ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name} แล้ว`) }}><span /></button></header><span className="category-label">{disease.category}</span><h2>{disease.name}</h2><p>{disease.description}</p><div className="criteria-box"><span>เกณฑ์ตรวจจับ</span><p>{disease.criteria}</p></div><div className="criteria-box"><span>เกณฑ์ระดับความรุนแรง</span>{getDiseaseSeverityLevels(disease).map((level) => <p key={level.label}><strong>{level.label}:</strong> {level.criteria || 'ยังไม่ได้ระบุเกณฑ์'}</p>)}</div><div className="disease-footer"><span className={`severity-label severity-${severityRank[disease.severity]}`}>สูงสุด: {disease.severity}</span><button type="button" onClick={() => { setCreating(false); setEditing(disease) }}>แก้ไขเกณฑ์ <ChevronRight size={16} /></button></div></article>)}</div>{creating || editing ? <DiseaseFormModal disease={editing} onClose={closeForm} onSave={saveDisease} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="เกณฑ์การประเมิน" title="Disease Master" description="AI จะประเมินเฉพาะรายการที่เปิดใช้งานและตามเกณฑ์ที่ผู้ดูแลกำหนด" action={<button className="button button-primary" type="button" onClick={openCreate}><Plus size={18} />เพิ่มรายการ</button>} /><div className="master-alert"><ShieldCheck size={20} /><div><strong>ผู้ดูแลเป็นผู้ควบคุมรายการทั้งหมด</strong><p>AI ไม่มีสิทธิ์สร้างชื่อภาวะหรือระดับความรุนแรงใหม่</p></div></div><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหารายการภาวะ" placeholder="ค้นหาชื่อ รหัส หรือหมวดหมู่" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>เปิดใช้ {diseaseRecords.filter((item) => item.active).length} รายการ</span></div><div className="disease-grid">{filtered.map((disease) => <article className={disease.active ? '' : 'inactive'} key={disease.id} data-pending={pendingDiseaseIds.has(disease.id) ? 'true' : undefined}><header><span className="disease-code">{disease.id}</span><button className={disease.active ? 'toggle on' : 'toggle'} type="button" role="switch" aria-checked={disease.active} aria-label={`${disease.active ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name}`} disabled={pendingDiseaseIds.has(disease.id)} onClick={() => toggle(disease.id)}><span /></button></header><span className="category-label">{disease.category}</span><h2>{disease.name}</h2><p>{disease.description}</p><div className="criteria-box"><span>เกณฑ์ตรวจจับ</span><p>{disease.criteria}</p></div><div className="criteria-box"><span>เกณฑ์ระดับความรุนแรง</span>{getDiseaseSeverityLevels(disease).map((level) => <p key={level.label}><strong>{level.label}:</strong> {level.criteria || 'ยังไม่ได้ระบุเกณฑ์'}</p>)}</div><div className="disease-footer"><span className={`severity-label severity-${severityRank[disease.severity]}`}>สูงสุด: {disease.severity}</span><button type="button" onClick={() => { setCreating(false); setEditing(disease) }}>แก้ไขเกณฑ์ <ChevronRight size={16} /></button></div></article>)}</div>{creating || editing ? <DiseaseFormModal disease={editing} onClose={closeForm} onSave={saveDisease} /> : null}</div>
 }
 
 function DiseaseFormModal({ disease, onClose, onSave }: { disease: Disease | null; onClose: () => void; onSave: (draft: Omit<Disease, 'id'>) => void | Promise<void> }) {
@@ -1308,21 +1349,27 @@ function DiseaseFormModal({ disease, onClose, onSave }: { disease: Disease | nul
       ? { name: disease.name, category: disease.category, description: disease.description, criteria: disease.criteria, severityCriteria: disease.severityCriteria, severity: disease.severity, severityLevels: levels, care: disease.care, recommendation: disease.recommendation, referenceImage: disease.referenceImage, active: disease.active }
       : { name: '', category: 'ผิวหนัง', description: '', criteria: '', severityCriteria: '', severity: 'เล็กน้อย', severityLevels: levels, care: '', recommendation: '', referenceImage: undefined, active: true }
   })
+  const [isSaving, setIsSaving] = useState(false)
   const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
   const updateSeverityCriteria = (label: Severity, criteria: string) => {
     const levels = (draft.severityLevels ?? getDiseaseSeverityLevels()).map((level) => level.label === label ? { ...level, criteria } : level)
     update('severityLevels', levels)
     update('severityCriteria', serializeSeverityLevels(levels))
   }
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     const levels = (draft.severityLevels ?? getDiseaseSeverityLevels()).map((level) => ({ ...level, criteria: level.criteria.trim() }))
     if (!draft.name.trim() || !draft.category.trim() || !draft.description.trim() || !draft.criteria.trim() || levels.some((level) => !level.criteria) || !draft.care.trim() || !draft.recommendation.trim()) return
-    onSave({ ...draft, name: draft.name.trim(), category: draft.category.trim(), description: draft.description.trim(), criteria: draft.criteria.trim(), severityCriteria: serializeSeverityLevels(levels), severityLevels: levels, care: draft.care.trim(), recommendation: draft.recommendation.trim() })
+    setIsSaving(true)
+    try {
+      await onSave({ ...draft, name: draft.name.trim(), category: draft.category.trim(), description: draft.description.trim(), criteria: draft.criteria.trim(), severityCriteria: serializeSeverityLevels(levels), severityLevels: levels, care: draft.care.trim(), recommendation: draft.recommendation.trim() })
+    } finally {
+      setIsSaving(false)
+    }
   }
   const readReferenceImage = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => update('referenceImage', String(reader.result)); reader.readAsDataURL(file); event.target.value = '' }
   const levels = draft.severityLevels ?? getDiseaseSeverityLevels()
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="disease-form-title"><header><div><span className="eyebrow">{disease ? 'แก้ไขเกณฑ์' : 'รายการใหม่'}</span><h2 id="disease-form-title">{disease ? `แก้ไข ${disease.name}` : 'เพิ่มรายการภาวะ'}</h2><p>AI จะใช้รายการนี้เฉพาะเมื่อเปิดใช้งานและมีเกณฑ์ครบถ้วน</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="disease-name">ชื่อภาวะ</label><input id="disease-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="เช่น ตาปลา" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="disease-category">หมวดหมู่</label><input id="disease-category" value={draft.category} onChange={(event) => update('category', event.target.value)} placeholder="เช่น ผิวหนัง" /></div><div><label className="field-label" htmlFor="disease-severity">ระดับสูงสุด</label><select id="disease-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as Severity)}>{severityOrder.map((label) => <option value={label} key={label}>{label}</option>)}</select></div></div><label className="field-label" htmlFor="disease-description">คำอธิบาย</label><textarea id="disease-description" value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="อธิบายภาวะให้ผู้ใช้เข้าใจ" /><label className="field-label" htmlFor="disease-criteria">เกณฑ์ตรวจจับ</label><textarea id="disease-criteria" value={draft.criteria} onChange={(event) => update('criteria', event.target.value)} placeholder="เกณฑ์ที่ AI ใช้ประเมิน" /><div className="severity-criteria-editor"><span className="field-label">เกณฑ์แต่ละระดับความรุนแรง</span><small className="field-helper">กำหนดเกณฑ์แยกตามระดับ เพื่อให้ AI ใช้ schema ของภาวะนี้เท่านั้น</small>{levels.map((level) => <label key={level.label} className="severity-criteria-row" htmlFor={`disease-severity-${level.rank}`}><span className={`severity-label severity-${level.rank}`}>{level.label}</span><textarea id={`disease-severity-${level.rank}`} value={level.criteria} onChange={(event) => updateSeverityCriteria(level.label, event.target.value)} placeholder={`เกณฑ์ระดับ${level.label}`} /></label>)}</div><label className="field-label" htmlFor="disease-care">คำแนะนำการดูแล</label><textarea id="disease-care" value={draft.care} onChange={(event) => update('care', event.target.value)} placeholder="คำแนะนำเมื่อพบภาวะนี้" /><label className="field-label" htmlFor="disease-recommendation">การรักษา / คำแนะนำเพิ่มเติม</label><textarea id="disease-recommendation" value={draft.recommendation} onChange={(event) => update('recommendation', event.target.value)} placeholder="เมื่อใดควรพบแพทย์ หรือแนวทางส่งต่อ" /><label className="field-label" htmlFor="disease-reference-image">รูปอ้างอิง</label><input id="disease-reference-image" type="file" accept="image/*" onChange={readReferenceImage} />{draft.referenceImage ? <img className="reference-image-preview" src={draft.referenceImage} alt="รูปอ้างอิงภาวะ" /> : <small className="field-helper">รูปจะถูกเก็บเป็น preview ใน prototype; production จะอัปโหลดไป storage ที่กำหนด</small>}<label className="form-switch"><input type="checkbox" checked={draft.active} onChange={(event) => update('active', event.target.checked)} /><span className={draft.active ? 'toggle on' : 'toggle'}><span /></span><span>เปิดส่งรายการนี้ให้ AI ประเมิน</span></label><div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกเกณฑ์</button></div></form></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="disease-form-title"><header><div><span className="eyebrow">{disease ? 'แก้ไขเกณฑ์' : 'รายการใหม่'}</span><h2 id="disease-form-title">{disease ? `แก้ไข ${disease.name}` : 'เพิ่มรายการภาวะ'}</h2><p>AI จะใช้รายการนี้เฉพาะเมื่อเปิดใช้งานและมีเกณฑ์ครบถ้วน</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="disease-name">ชื่อภาวะ</label><input id="disease-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="เช่น ตาปลา" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="disease-category">หมวดหมู่</label><input id="disease-category" value={draft.category} onChange={(event) => update('category', event.target.value)} placeholder="เช่น ผิวหนัง" /></div><div><label className="field-label" htmlFor="disease-severity">ระดับสูงสุด</label><select id="disease-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as Severity)}>{severityOrder.map((label) => <option value={label} key={label}>{label}</option>)}</select></div></div><label className="field-label" htmlFor="disease-description">คำอธิบาย</label><textarea id="disease-description" value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="อธิบายภาวะให้ผู้ใช้เข้าใจ" /><label className="field-label" htmlFor="disease-criteria">เกณฑ์ตรวจจับ</label><textarea id="disease-criteria" value={draft.criteria} onChange={(event) => update('criteria', event.target.value)} placeholder="เกณฑ์ที่ AI ใช้ประเมิน" /><div className="severity-criteria-editor"><span className="field-label">เกณฑ์แต่ละระดับความรุนแรง</span><small className="field-helper">กำหนดเกณฑ์แยกตามระดับ เพื่อให้ AI ใช้ schema ของภาวะนี้เท่านั้น</small>{levels.map((level) => <label key={level.label} className="severity-criteria-row" htmlFor={`disease-severity-${level.rank}`}><span className={`severity-label severity-${level.rank}`}>{level.label}</span><textarea id={`disease-severity-${level.rank}`} value={level.criteria} onChange={(event) => updateSeverityCriteria(level.label, event.target.value)} placeholder={`เกณฑ์ระดับ${level.label}`} /></label>)}</div><label className="field-label" htmlFor="disease-care">คำแนะนำการดูแล</label><textarea id="disease-care" value={draft.care} onChange={(event) => update('care', event.target.value)} placeholder="คำแนะนำเมื่อพบภาวะนี้" /><label className="field-label" htmlFor="disease-recommendation">การรักษา / คำแนะนำเพิ่มเติม</label><textarea id="disease-recommendation" value={draft.recommendation} onChange={(event) => update('recommendation', event.target.value)} placeholder="เมื่อใดควรพบแพทย์ หรือแนวทางส่งต่อ" /><label className="field-label" htmlFor="disease-reference-image">รูปอ้างอิง</label><input id="disease-reference-image" type="file" accept="image/*" onChange={readReferenceImage} />{draft.referenceImage ? <img className="reference-image-preview" src={draft.referenceImage} alt="รูปอ้างอิงภาวะ" /> : <small className="field-helper">รูปจะถูกเก็บเป็น preview ใน prototype; production จะอัปโหลดไป storage ที่กำหนด</small>}<label className="form-switch"><input type="checkbox" checked={draft.active} onChange={(event) => update('active', event.target.checked)} /><span className={draft.active ? 'toggle on' : 'toggle'}><span /></span><span>เปิดส่งรายการนี้ให้ AI ประเมิน</span></label><div className="admin-form-actions"><button className="button button-secondary" type="button" disabled={isSaving} onClick={onClose}>ยกเลิก</button><button className={isSaving ? 'button button-primary action-pending' : 'button button-primary'} type="submit" disabled={isSaving}>{isSaving ? 'กำลังบันทึก…' : 'บันทึกเกณฑ์'}</button></div></form></section></div>
 }
 
 function KnowledgeManagement({ articles, diseaseRecords, setArticles, showToast, adminService }: { articles: KnowledgeArticle[]; diseaseRecords: Disease[]; setArticles: React.Dispatch<React.SetStateAction<KnowledgeArticle[]>>; showToast: (text: string) => void; adminService?: AdminService }) {
