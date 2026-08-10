@@ -12,6 +12,24 @@ export function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload))
 }
 
+export function readCookie(req, name) {
+  const cookieHeader = String(req.headers.cookie || '')
+  for (const item of cookieHeader.split(';')) {
+    const separator = item.indexOf('=')
+    if (separator < 0) continue
+    if (item.slice(0, separator).trim() === name) return decodeURIComponent(item.slice(separator + 1).trim())
+  }
+  return ''
+}
+
+export function setCookie(res, name, value, options = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${options.path || '/'}`, `SameSite=${options.sameSite || 'Lax'}`]
+  if (options.httpOnly !== false) parts.push('HttpOnly')
+  if (options.secure !== false) parts.push('Secure')
+  if (Number.isFinite(options.maxAge)) parts.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`)
+  res.setHeader('Set-Cookie', parts.join('; '))
+}
+
 export function handleOptions(req, res) {
   setCors(res)
   if (req.method === 'OPTIONS') {

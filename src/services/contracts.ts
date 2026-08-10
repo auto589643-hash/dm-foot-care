@@ -1,9 +1,10 @@
-import type { Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, Severity, UserRecord } from '../types'
+import type { Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
 import type { AiValidationResult } from './aiValidator.ts'
 
 /** Client-safe boundary. Production implementation calls a backend username mapping endpoint. */
 export interface AuthService {
   signInWithUsername(username: string, pin: string): Promise<Profile>
+  register(input: RegistrationInput): Promise<void>
   signOut(): Promise<void>
   restoreSession(): Promise<Profile | null>
 }
@@ -19,7 +20,8 @@ export interface FootAssessmentProvider {
   analyze(input: {
     examinationId: string
     idempotencyKey: string
-    imageReferences: Record<FootPosition, string>
+    imageReferences: Partial<Record<FootPosition, string>>
+    analysisImages?: Partial<Record<FootPosition, string>>
     diseaseMasterVersion: string
   }): Promise<{
     runId: string

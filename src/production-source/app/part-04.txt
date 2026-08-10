@@ -1,0 +1,167 @@
+      <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})` } : undefined}>
+        {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
+        {photo === 'demo' ? <div className="demo-foot-photo"><FourFrameIllustration /></div> : null}
+        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><strong>วางเท้าให้อยู่ภายในกรอบ</strong><span>ให้เห็นเท้าครบและภาพไม่สั่น</span></div></> : null}
+        <span className="viewfinder-corner vc-1" /><span className="viewfinder-corner vc-2" /><span className="viewfinder-corner vc-3" /><span className="viewfinder-corner vc-4" />
+      </div>
+      <div className="capture-controls">
+        {!photo ? (
+          <>
+            <p><Sparkles size={18} />{current.hint}</p>
+            {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
+            <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
+            <div className="camera-actions">
+              <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
+              <button className="camera-shutter" type="button" aria-label="ถ่ายภาพ" disabled={cameraState !== 'ready'} onClick={() => void capturePhoto()}><span><Camera size={30} /></span></button>
+              <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>กลับกล้อง</span></button>
+            </div>
+            <button className="text-button demo-photo-button" type="button" onClick={useDemoPhoto}><ImageIcon size={17} />ใช้ภาพตัวอย่างสำหรับทดลอง</button>
+          </>
+        ) : (
+          <div className={qualityState === 'retry' ? 'quality-result failed' : 'quality-result'}>
+            <div className="quality-heading"><span>{qualityState === 'passed' ? <CircleCheck size={21} /> : qualityState === 'retry' ? <AlertTriangle size={21} /> : <Clock3 size={21} />}</span><div><strong>{qualityState === 'passed' ? 'ภาพนี้อยู่ในเกณฑ์เบื้องต้น' : qualityState === 'retry' ? 'แนะนำให้ถ่ายภาพใหม่' : 'กำลังตรวจสอบภาพ…'}</strong><small>{qualityResult?.message ?? 'ระบบกำลังเช็กแสง ความละเอียด และความชัด'}</small></div></div>
+            {qualityResult ? <div className="quality-checks">{qualityResult.checks.map((check) => <span className={check.passed ? '' : 'failed'} key={check.label}>{check.passed ? <Check size={15} /> : <X size={15} />}{check.label}</span>)}</div> : null}
+            <button className="button button-primary button-large" type="button" disabled={qualityState !== 'passed'} onClick={onNext}>{step === 3 ? 'ตรวจดูภาพทั้งหมด' : 'ใช้ภาพนี้และถ่ายภาพต่อไป'}<ArrowRight size={20} /></button>
+            <button className="button button-ghost" type="button" onClick={clearPhoto}><RotateCcw size={18} />ถ่ายใหม่</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PhotoReview({ photos, onRetake, onEvaluate, onBack }: { photos: Partial<Record<FootPosition, string>>; onRetake: (index: number) => void; onEvaluate: () => void; onBack: () => void }) {
+  return (
+    <div className="page narrow-page review-page">
+      <PageBack onClick={onBack}>กลับไปถ่ายภาพ</PageBack>
+      <span className="eyebrow">ตรวจดูภาพ</span><h1>ภาพเท้าครบทั้ง 4 มุม</h1><p className="page-lead">ตรวจให้แน่ใจว่าภาพชัดและเห็นเท้าครบ หากต้องการแก้ไขสามารถถ่ายใหม่เฉพาะภาพได้</p>
+      <div className="photo-review-grid">
+        {footSteps.map((item, index) => {
+          const photo = photos[item.id]
+          return <div className="photo-card" key={item.id}><div className="photo-preview" style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})` } : undefined}>{photo === 'demo' || !photo ? <div className="mini-foot-art"><Footprints size={42} /></div> : null}<span><CircleCheck size={15} />ภาพชัดเจน</span></div><div><strong>{item.label}</strong><button type="button" onClick={() => onRetake(index)}><RotateCcw size={16} />ถ่ายใหม่</button></div></div>
+        })}
+      </div>
+      <div className="review-notice"><ShieldCheck size={19} /><p>เมื่อกดประเมินผล รูปต้นฉบับจะถูกส่งไปวิเคราะห์แบบส่วนตัวและไม่เผยแพร่สู่สาธารณะ</p></div>
+      <button className="button button-primary button-large" type="button" onClick={onEvaluate}><Sparkles size={21} />ประเมินผล</button>
+    </div>
+  )
+}
+
+function useOnlineStatus(): boolean {
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  useEffect(() => {
+    const handleOnline = () => setOnline(true)
+    const handleOffline = () => setOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline) }
+  }, [])
+  return online
+}
+
+function ProcessingScreen({ current, error, onRetry }: { current: number; error: string; onRetry: () => void }) {
+  const online = useOnlineStatus()
+  const [recoveryReady, setRecoveryReady] = useState(false)
+  useEffect(() => {
+    const handleOnline = () => setRecoveryReady(true)
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
+  const analysisProgress = Math.min(92, 18 + current * 25)
+  return (
+    <div className="processing-screen">
+      <div className="processing-visual"><div className="processing-ring"><Footprints size={42} /></div><span className="orbit-dot" /></div>
+      <span className="eyebrow">กรุณารอสักครู่</span><h1>กำลังประเมินผล</h1><p>ระบบกำลังตรวจภาพเท้าทั้ง 4 มุม</p>
+      <div className="progress-panel">
+        <div className="progress-meta"><span>ความคืบหน้า</span><strong>{analysisProgress}%</strong></div>
+        <div className="progress-track"><span style={{ width: `${analysisProgress}%` }} /></div>
+        <ol><li className="current"><span><Sparkles size={16} /></span><div><strong>กำลังวิเคราะห์ภาพ</strong><small>กำลังดำเนินการ…</small></div></li></ol>
+      </div>
+      {!online ? <div className="processing-error offline-error" role="alert"><WifiOff size={21} /><div><strong>ไม่มีอินเทอร์เน็ตชั่วคราว</strong><p>เชื่อมต่ออินเทอร์เน็ตก่อน ระบบจะไม่ส่งภาพซ้ำจนกว่าคุณจะพร้อม</p><button className="button button-secondary button-small" type="button" disabled>รอการเชื่อมต่อ…</button></div></div> : recoveryReady ? <div className="processing-error offline-error" role="alert"><WifiOff size={21} /><div><strong>เชื่อมต่อกลับมาแล้ว</strong><p>ภาพยังอยู่บนอุปกรณ์และยังไม่ได้ส่งซ้ำ กดเพื่อประเมินต่อ</p><button className="button button-secondary button-small" type="button" onClick={() => { setRecoveryReady(false); onRetry() }}>ลองประเมินอีกครั้ง</button></div></div> : error ? <div className="processing-error" role="alert"><AlertTriangle size={21} /><div><strong>ยังประเมินผลไม่สำเร็จ</strong><p>{error}</p><button className="button button-secondary button-small" type="button" onClick={onRetry}>ลองประเมินอีกครั้ง</button></div></div> : null}
+      <div className="stay-note"><Info size={18} />กรุณาอย่าปิดหน้านี้ระหว่างดำเนินการ</div>
+    </div>
+  )
+}
+
+function HumanReview({ photos, diseaseRecords, aiFindings, confirmedFindings, setConfirmedFindings, submitError, onSubmit, isSubmitting, onBack }: { photos: Partial<Record<FootPosition, string>>; diseaseRecords: Disease[]; aiFindings: Finding[]; confirmedFindings: Finding[]; setConfirmedFindings: React.Dispatch<React.SetStateAction<Finding[]>>; submitError?: string; onSubmit: () => void; isSubmitting?: boolean; onBack: () => void }) {
+  const [selectedPhoto, setSelectedPhoto] = useState<FootPosition | null>(null)
+  const detectedCount = confirmedFindings.filter((finding) => finding.detected).length
+  const updateFinding = (id: string, patch: Partial<Finding>) => setConfirmedFindings((current) => current.map((finding) => finding.diseaseId === id ? { ...finding, ...patch } : finding))
+  return (
+    <div className="page narrow-page human-review-page">
+      <PageBack onClick={onBack}>กลับไปดูภาพ</PageBack>
+      <div className="review-title-row"><div><span className="eyebrow">ตรวจทานผล</span><h1>AI แนะนำ {detectedCount} รายการ</h1></div><span className="ai-badge"><Sparkles size={16} />ผลช่วยประเมิน</span></div>
+      <p className="page-lead">ตรวจความถูกต้อง เลือกหรือยกเลิกรายการ และปรับระดับก่อนส่งผลตรวจ</p>
+      <div className="review-image-strip">{footSteps.map((item, index) => { const photo = photos[item.id]; return <button type="button" key={item.id} aria-label={`ดู${item.label}`} onClick={() => setSelectedPhoto(item.id)} style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>{!photo || photo === 'demo' ? <Footprints size={24} /> : null}<span>{index + 1}</span></button> })}</div>
+      <div className="checklist-heading"><h2>รายการที่ตรวจ</h2><span>{detectedCount} จาก {confirmedFindings.length} รายการ</span></div>
+      <div className="condition-checklist">
+        {confirmedFindings.map((finding) => (
+          <article className={finding.detected ? 'condition-item selected' : 'condition-item'} key={finding.diseaseId}>
+            <label className="condition-check"><input type="checkbox" checked={finding.detected} onChange={(event) => updateFinding(finding.diseaseId, { detected: event.target.checked })} /><span className="custom-checkbox"><Check size={16} /></span><span><strong>{finding.name}</strong><small>AI แนะนำ: {aiFindings.find((item) => item.diseaseId === finding.diseaseId)?.detected ? 'พบ' : 'ไม่พบ'} · มั่นใจ {aiFindings.find((item) => item.diseaseId === finding.diseaseId)?.confidence ?? 0}%</small></span></label>
+            {finding.detected ? <label className="severity-select">ระดับ<select value={finding.severity} onChange={(event) => updateFinding(finding.diseaseId, { severity: event.target.value as Severity })}>{getDiseaseSeverityLevels(diseaseRecords.find((disease) => disease.id === finding.diseaseId)).map((level) => <option value={level.label} key={level.label}>{level.label}</option>)}</select><ChevronDown size={16} /></label> : <span className="not-found-label">ไม่พบ</span>}
+          </article>
+        ))}
+      </div>
+      <div className="review-explainer"><Info size={19} /><p>ผล AI ต้นฉบับจะถูกเก็บแยกจากรายการที่คุณยืนยัน เพื่อให้แพทย์ตรวจสอบย้อนหลังได้</p></div>
+      {submitError ? <div className="form-error review-submit-error" role="alert"><AlertTriangle size={18} />{submitError}</div> : null}
+      <button className="button button-primary button-large" type="button" disabled={isSubmitting} onClick={onSubmit}><FileCheck2 size={21} />{isSubmitting ? 'กำลังเตรียมภาพสรุป…' : 'ยืนยันและส่งผลตรวจ'}</button>
+      {selectedPhoto ? <PhotoViewer position={selectedPhoto} photo={photos[selectedPhoto]} onClose={() => setSelectedPhoto(null)} /> : null}
+    </div>
+  )
+}
+
+function PhotoViewer({ position, photo, onClose }: { position: FootPosition; photo?: string; onClose: () => void }) {
+  const label = footSteps.find((step) => step.id === position)?.label ?? position
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal photo-viewer" role="dialog" aria-modal="true" aria-labelledby="photo-viewer-title"><header><div><span className="eyebrow">ภาพจากการตรวจ</span><h2 id="photo-viewer-title">{label}</h2></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><div className="photo-viewer-canvas" style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})` } : undefined}>{!photo || photo === 'demo' ? <FourFrameIllustration /> : null}</div><p className="photo-viewer-note">ตรวจว่าภาพเห็นเท้าครบและไม่มีส่วนสำคัญถูกบัง ก่อนกลับไปยืนยันรายการ</p><button className="button button-primary" type="button" onClick={onClose}>กลับไปตรวจผล</button></section></div>
+}
+
+function SummaryReport({ examination, photos, diseaseRecords, onHome, onRestart }: { examination: Examination; photos: Partial<Record<FootPosition, string>>; diseaseRecords: Disease[]; onHome: () => void; onRestart: () => void }) {
+  const findings = examination.findings
+  const recommendationLines = [...new Set(findings.flatMap((finding) => {
+    const disease = diseaseRecords.find((item) => item.id === finding.diseaseId)
+    return disease ? [disease.care, disease.recommendation].filter(Boolean) : []
+  }))].slice(0, 3)
+  const comparisonFinding = findings.find((finding) => finding.comparison !== 'คงที่')
+  const fallbackRecommendations = ['ล้างเท้าและซับให้แห้ง โดยเฉพาะซอกนิ้ว', 'ตรวจเท้าด้วยตนเองทุกวัน', 'หากมีแผล บวม แดง ร้อน หรือปวดผิดปกติ ให้ติดต่อแพทย์']
+  return (
+    <div className="page narrow-page summary-page">
+      <div className="success-mark"><Check size={30} /></div><span className="eyebrow">บันทึกเรียบร้อย</span><h1>ผลการตรวจเท้า</h1><p className="summary-date">{examination.displayDate} · {examination.time} น. · {examination.id}</p>
+      <section className="summary-overview">
+        <div><span>ภาวะที่พบ</span><strong>{findings.length}<small> รายการ</small></strong></div><div><span>ภาพรวม</span><strong className={findings.length ? 'attention-text' : 'success-text'}>{findings.length ? 'ควรติดตาม' : 'ยังไม่พบภาวะ'}</strong></div>
+      </section>
+      <section className="summary-images"><div className="section-heading"><div><span className="eyebrow">ภาพจากการตรวจ</span><h2>ภาพเท้า 4 มุม</h2></div><span className="status-pill success"><CircleCheck size={15} />ครบ 4 ภาพ</span></div><div className="summary-photo-grid">{footSteps.map((step) => { const photo = photos[step.id]; return <div className="summary-photo" key={step.id} style={photo && photo !== 'demo' ? { backgroundImage: `url(${photo})` } : undefined}>{!photo || photo === 'demo' ? <Footprints size={26} /> : null}<span>{step.short}</span></div> })}</div></section>
+      {findings.length ? <section className="summary-section"><div className="section-heading"><div><span className="eyebrow">ผลที่ยืนยันแล้ว</span><h2>รายการที่พบ</h2></div></div><div className="finding-list">{findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />)}</div></section> : <section className="no-finding-card"><CircleCheck size={24} /><div><h2>ยังไม่พบภาวะจากรายการที่ตรวจ</h2><p>ผลนี้ไม่ได้แปลว่าไม่มีโรคแน่นอน หากมีอาการผิดปกติ ให้เฝ้าระวังและติดต่อแพทย์</p></div></section>}
+      {comparisonFinding ? <section className="comparison-card"><div className="comparison-icon"><TrendingDown size={24} /></div><div><span className="eyebrow">เทียบกับครั้งก่อน</span><h2>{comparisonFinding.name} {comparisonFinding.comparison}</h2><p>ผลเปรียบเทียบจากการตรวจครั้งก่อน ควรติดตามตามคำแนะนำของแพทย์</p></div></section> : null}
+      <section className="recommendation-card"><div className="section-heading"><div><span className="eyebrow">คำแนะนำจากแพทย์</span><h2>ดูแลต่อเนื่องหลังการตรวจ</h2></div><HeartPulse size={24} /></div><ul>{(recommendationLines.length ? recommendationLines : fallbackRecommendations).map((recommendation) => <li key={recommendation}><Check size={17} />{recommendation}</li>)}</ul></section>
+      <ClinicalDisclaimer />
+      <button className="button button-primary button-large" type="button" onClick={onHome}>กลับหน้าหลัก</button>
+      <button className="button button-ghost" type="button" onClick={onRestart}>เริ่มการตรวจใหม่</button>
+    </div>
+  )
+}
+
+function PageBack({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return <button className="page-back" type="button" onClick={onClick}><ArrowLeft size={18} />{children}</button>
+}
+
+function HistoryPage({ examinations: patientExaminations, diseaseRecords }: { examinations: Examination[]; diseaseRecords: Disease[] }) {
+  const [view, setView] = useState<HistoryView>('list')
+  const [selected, setSelected] = useState<Examination | null>(null)
+  return (
+    <div className="page history-page">
+      <PageTitle eyebrow="ติดตามสุขภาพเท้า" title="ประวัติการตรวจ" description="ดูผลย้อนหลัง วันที่ตรวจ และแนวโน้มการเปลี่ยนแปลง" />
+      <div className="segmented-control" role="tablist" aria-label="รูปแบบประวัติ">
+        <HistoryTab icon={List} label="รายการ" value="list" active={view === 'list'} onClick={setView} />
+        <HistoryTab icon={CalendarDays} label="ปฏิทิน" value="calendar" active={view === 'calendar'} onClick={setView} />
+        <HistoryTab icon={Activity} label="แนวโน้ม" value="insight" active={view === 'insight'} onClick={setView} />
+      </div>
+      {view === 'list' ? <HistoryList examinations={patientExaminations} onSelect={setSelected} /> : view === 'calendar' ? <HistoryCalendar examinations={patientExaminations} onSelect={setSelected} /> : <HistoryInsight examinations={patientExaminations} onSelect={setSelected} />}
+      {selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}
+    </div>
+  )
+}
+
+function PageTitle({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
+  return <header className="page-title"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</header>
+}
+

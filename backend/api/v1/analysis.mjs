@@ -5,27 +5,60 @@ import { loadActiveDiseaseMaster, requireSupabaseUser } from '../_lib/supabase.m
 
 const validPositions = new Set(['left-dorsal', 'left-sole', 'right-dorsal', 'right-sole'])
 const validSeverities = new Set(['เล็กน้อย', 'ปานกลาง', 'รุนแรง'])
+const maxAnalysisImageBytes = 800_000
+const maxAnalysisPayloadBytes = 3_200_000
+
+function readInlineImages(values) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return []
+  let totalBytes = 0
+  return Object.entries(values).map(([position, value]) => {
+    if (!validPositions.has(position)) throw new Error(`Invalid image position: ${position}`)
+    const match = /^data:(image\/(?:jpeg|webp|png));base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''))
+    if (!match) throw new Error(`Invalid analysis image: ${position}`)
+    const bytes = Buffer.byteLength(match[2], 'base64')
+    totalBytes += bytes
+    if (!bytes || bytes > maxAnalysisImageBytes || totalBytes > maxAnalysisPayloadBytes) throw new Error('Analysis images are too large')
+    return { position, mimeType: match[1], data: match[2] }
+  })
+}
+
+function logTiming(examinationId, startedAt, phases, outcome) {
+  console.info(JSON.stringify({ event: 'dmfc_analysis_timing', examinationId, outcome, totalMs: Date.now() - startedAt, ...phases }))
+}
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   setCors(res)
   if (req.method !== 'POST') return sendJson(res, 405, { message: 'Method not allowed' })
+  const startedAt = Date.now()
+  const phases = {}
+  let examinationId = null
   try {
     const session = await requireSupabaseUser(req, res)
     if (!session) return
+    phases.authMs = Date.now() - startedAt
     const body = await readJsonBody(req)
-    let images = Array.isArray(body.images) ? body.images : []
+    examinationId = body.examinationId || null
+    let images = readInlineImages(body.analysisImages)
+    if (!images.length && Array.isArray(body.images)) images = body.images
     if (!images.length && body.imageReferences && typeof body.imageReferences === 'object') {
+      const driveStartedAt = Date.now()
       images = await Promise.all(Object.entries(body.imageReferences).map(async ([position, fileId]) => {
         const file = await downloadFile(String(fileId))
         return { position, mimeType: file.mimeType, data: file.data.toString('base64') }
       }))
+      phases.driveDownloadMs = Date.now() - driveStartedAt
     }
+    phases.inputMs = Date.now() - startedAt - phases.authMs
     if (!body.examinationId || !body.idempotencyKey || images.length === 0) {
       return sendJson(res, 400, { message: 'examinationId, idempotencyKey and images are required for the initial Gemini path' })
     }
+    const diseaseStartedAt = Date.now()
     const diseaseMaster = await loadActiveDiseaseMaster()
+    phases.diseaseMasterMs = Date.now() - diseaseStartedAt
+    const geminiStartedAt = Date.now()
     const analysis = await callGemini({ images, diseaseMaster })
+    phases.geminiMs = Date.now() - geminiStartedAt
     const diseasesById = new Map(diseaseMaster.map((disease) => [disease.id, disease]))
     const rejectedItems = []
     const findings = []
@@ -52,6 +85,7 @@ export default async function handler(req, res) {
         imagePositions: positions,
       })
     })
+    logTiming(examinationId, startedAt, phases, 'success')
     sendJson(res, 200, {
       runId: `gemini-${body.examinationId}-${body.idempotencyKey}`,
       rawResult: analysis.rawResult,
@@ -61,7 +95,9 @@ export default async function handler(req, res) {
       userId: session.user.id,
     })
   } catch (error) {
+    // Keep the full provider response in Vercel logs; return only a concise failure to clients.
     console.error('Gemini analysis failed', error)
+    logTiming(examinationId, startedAt, phases, 'failed')
     sendJson(res, 500, { message: error instanceof Error ? error.message : 'Gemini analysis failed' })
   }
 }

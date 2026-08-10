@@ -1,0 +1,109 @@
+function DoctorHome({ onNavigate, showToast, users, diseaseRecords, adminService }: { onNavigate: (page: Page) => void; showToast: (text: string) => void; users: UserRecord[]; diseaseRecords: Disease[]; adminService?: AdminService }) {
+  const [selectedExam, setSelectedExam] = useState<Examination | null>(null)
+  const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null)
+  const activeCount = users.filter((user) => user.status === 'active').length
+  const recordsWithHistory = users.filter((user) => user.lastExam !== 'ยังไม่มีประวัติ').length
+  return <div className="page admin-page"><PageTitle eyebrow="Doctor workspace" title="สวัสดี พญ. มาลี" description="ภาพรวมกลุ่มทดลอง DM Foot Care วันนี้" action={<button className="button button-primary" type="button" onClick={() => onNavigate('users')}><Plus size={18} />เพิ่มผู้ใช้งาน</button>} /><div className="admin-stat-grid"><AdminStat icon={Users} label="ผู้ใช้งาน Active" value={String(activeCount)} note={`จากทั้งหมด ${users.length} คน`} tone="blue" /><AdminStat icon={ClipboardCheck} label="มีประวัติการตรวจ" value={String(recordsWithHistory)} note="จากข้อมูลผู้ใช้งานปัจจุบัน" tone="teal" /><AdminStat icon={AlertTriangle} label="ควรติดตาม" value="3" note="มีระดับรุนแรง 1 คน" tone="amber" /><AdminStat icon={Activity} label="ตรวจล่าสุด" value={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.lastExam ?? '—'} note={users.find((user) => user.lastExam !== 'ยังไม่มีประวัติ')?.username ?? 'ยังไม่มีข้อมูล'} tone="blue" /></div><div className="admin-grid"><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">ต้องตรวจสอบ</span><h2>ผู้ใช้ที่ควรติดตาม</h2></div><button className="text-link" type="button" onClick={() => onNavigate('users')}>ดูทั้งหมด</button></div><div className="followup-list"><FollowupRow initials="ปม" name="ประเสริฐ มั่นคง" code="DM002" issue="แผลที่เท้า · รุนแรง" time="7 ส.ค. 2569" severe /><FollowupRow initials="นส" name="นภา แสงทอง" code="DM003" issue="ผิวแห้ง · ปานกลาง" time="5 ส.ค. 2569" /><FollowupRow initials="วด" name="วิชัย ดีพร้อม" code="DM004" issue="ไม่ได้ตรวจ 11 วัน" time="28 ก.ค. 2569" /></div></section><section className="admin-panel"><div className="section-heading"><div><span className="eyebrow">7 วันที่ผ่านมา</span><h2>กิจกรรมการตรวจ</h2></div><span className="status-pill success"><TrendingUp size={15} />12 ครั้ง</span></div><div className="activity-chart">{[32,58,44,72,48,90,66].map((height, index) => <div key={index}><span style={{ height: `${height}%` }} /><small>{['อา','จ','อ','พ','พฤ','ศ','ส'][index]}</small></div>)}</div><div className="chart-legend"><span><i />การตรวจที่เสร็จสมบูรณ์</span><strong>เฉลี่ย 1.7 ครั้ง/วัน</strong></div></section></div><section className="admin-panel recent-panel"><div className="section-heading"><div><span className="eyebrow">กิจกรรมล่าสุด</span><h2>การตรวจล่าสุด</h2></div><button className="text-link" type="button" onClick={() => { onNavigate('users'); showToast('เปิดรายการผู้ใช้งานแล้ว') }}>ดูประวัติทั้งหมด</button></div><AdminTable users={users} onSelect={(user, index) => { if (adminService) setSelectedUser(user); else setSelectedExam(examinations[index] ?? examinations[0]) }} /></section>{selectedExam ? <ExaminationDetail exam={selectedExam} diseaseRecords={diseaseRecords} onClose={() => setSelectedExam(null)} /> : null}{selectedUser ? <UserHistoryModal user={selectedUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setSelectedUser(null)} /> : null}</div>
+}
+
+function AdminStat({ icon: Icon, label, value, note, tone }: { icon: typeof Users; label: string; value: string; note: string; tone: string }) {
+  return <div className="admin-stat"><span className={`admin-stat-icon tone-${tone}`}><Icon size={21} /></span><div><span>{label}</span><strong>{value}</strong><small>{note}</small></div></div>
+}
+
+function FollowupRow({ initials, name, code, issue, time, severe }: { initials: string; name: string; code: string; issue: string; time: string; severe?: boolean }) {
+  return <button type="button"><span className="avatar">{initials}</span><div><strong>{name}</strong><small>{code} · {time}</small></div><span className={severe ? 'status-pill danger' : 'status-pill attention'}>{issue}</span><ChevronRight size={18} /></button>
+}
+
+function AdminTable({ users, onSelect }: { users: UserRecord[]; onSelect: (user: UserRecord, index: number) => void }) {
+  return <div className="table-wrap"><table><thead><tr><th>ผู้ใช้งาน</th><th>วันที่ตรวจ</th><th>ผลที่พบ</th><th>สถานะ</th><th><span className="visually-hidden">การทำงาน</span></th></tr></thead><tbody>{users.slice(0,3).map((user, index) => <tr key={user.id}><td><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username}</small></div></div></td><td>{user.lastExam}</td><td>{user.lastExam === 'ยังไม่มีประวัติ' ? 'ยังไม่มีผลตรวจ' : index === 1 ? 'แผลที่เท้า, ผิวแห้ง' : 'ผิวแห้ง, หนังด้าน'}</td><td><span className={index === 1 ? 'status-pill danger' : 'status-pill attention'}>{index === 1 ? 'ควรตรวจสอบ' : user.lastExam === 'ยังไม่มีประวัติ' ? 'รอตรวจ' : 'ติดตาม'}</span></td><td><button className="icon-button" type="button" aria-label={`ดู ${user.name}`} onClick={() => onSelect(user, index)}><Eye size={18} /></button></td></tr>)}</tbody></table></div>
+}
+
+type UserFormDraft = Omit<UserRecord, 'id' | 'lastExam'> & { pin?: string }
+
+function UserManagement({ users, diseaseRecords, setUsers, showToast, adminService, auditLogger }: { users: UserRecord[]; diseaseRecords: Disease[]; setUsers: React.Dispatch<React.SetStateAction<UserRecord[]>>; showToast: (text: string) => void; adminService?: AdminService; auditLogger?: AuditLogger }) {
+  const [query, setQuery] = useState('')
+  const [editing, setEditing] = useState<UserRecord | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [historyUser, setHistoryUser] = useState<UserRecord | null>(null)
+  const filtered = users.filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase())).sort((left, right) => {
+    const priority = { pending: 0, active: 1, inactive: 2 }
+    return priority[left.status] - priority[right.status] || left.username.localeCompare(right.username)
+  })
+  const pendingCount = users.filter((user) => user.status === 'pending').length
+  const toggle = (id: string) => {
+    const user = users.find((item) => item.id === id)
+    if (!user) return
+    const nextStatus = user.status === 'active' ? 'inactive' : 'active'
+    if (adminService) {
+      void adminService.setUserStatus(id, nextStatus).then(() => {
+        setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
+        void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
+        showToast(`${user.status === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
+      }).catch(() => showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ'))
+      return
+    }
+    setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
+  }
+  const closeForm = () => { setEditing(null); setCreating(false) }
+  const saveUser = async (draft: UserFormDraft) => {
+    if (adminService) {
+      try {
+        const saved = await adminService.saveUser(editing ? { ...draft, id: editing.id } : draft)
+        setUsers((current) => editing ? current.map((user) => user.id === editing.id ? saved : user) : [...current, saved])
+        void auditLogger?.append({ actorId: null, eventType: editing ? 'user_updated' : 'user_created', entityType: 'user', entityId: saved.id, payload: { username: saved.username, status: saved.status } }).catch(() => {})
+        showToast(`${editing ? 'บันทึกข้อมูล' : 'เพิ่มผู้ใช้'} ${saved.username} แล้ว`)
+        closeForm()
+      } catch {
+        showToast('บันทึกข้อมูลผู้ใช้ไม่สำเร็จ')
+      }
+      return
+    }
+    const { pin, ...safeDraft } = draft
+    void pin
+    if (editing) {
+      setUsers((current) => current.map((user) => user.id === editing.id ? { ...user, ...safeDraft } : user))
+      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: editing.id, payload: { username: safeDraft.username, status: safeDraft.status } }).catch(() => {})
+      showToast(`บันทึกข้อมูล ${safeDraft.username} แล้ว`)
+    } else {
+      const nextId = `USR-${String(users.length + 1).padStart(3, '0')}`
+      setUsers((current) => [...current, { ...safeDraft, id: nextId, lastExam: 'ยังไม่มีประวัติ' }])
+      void auditLogger?.append({ actorId: null, eventType: 'user_created', entityType: 'user', entityId: nextId, payload: { username: safeDraft.username, status: safeDraft.status } }).catch(() => {})
+      showToast(`เพิ่มผู้ใช้ ${safeDraft.username} แล้ว`)
+    }
+    closeForm()
+  }
+  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
+}
+
+function UserHistoryModal({ user, diseaseRecords = diseases, adminService, onClose }: { user: UserRecord; diseaseRecords?: Disease[]; adminService?: AdminService; onClose: () => void }) {
+  const [selected, setSelected] = useState<Examination | null>(null)
+  const [history, setHistory] = useState<Examination[]>(() => userExaminations[user.id] ?? [])
+  const [loading, setLoading] = useState(Boolean(adminService))
+  useEffect(() => {
+    if (!adminService) return
+    let cancelled = false
+    void adminService.listUserExaminations(user.id).then((records) => {
+      if (!cancelled) setHistory(records)
+    }).catch(() => {
+      if (!cancelled) setHistory([])
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [adminService, user.id])
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังสำหรับการติดตามโดยแพทย์</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ')}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}</div>
+}
+
+function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void> }) {
+  const [draft, setDraft] = useState<Omit<UserRecord, 'id' | 'lastExam'> & { pin: string }>(() => user
+    ? { username: user.username, name: user.name, dateOfBirth: user.dateOfBirth, age: calculateAge(user.dateOfBirth), occupation: user.occupation, pinConfigured: user.pinConfigured, status: user.status, pin: '' }
+    : { username: '', name: '', dateOfBirth: '1960-01-01', age: 0, occupation: '', pinConfigured: false, status: 'active', pin: '' })
+  const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!draft.username.trim() || !draft.name.trim() || !draft.dateOfBirth || !draft.occupation.trim()) return
+    const validPin = draft.pin === '' ? Boolean(user?.pinConfigured) : /^\d{4}$/.test(draft.pin)
+    if (!validPin) return
+    const safeDraft: Omit<UserRecord, 'id' | 'lastExam'> = { username: draft.username.trim().toUpperCase(), name: draft.name.trim(), dateOfBirth: draft.dateOfBirth, age: calculateAge(draft.dateOfBirth), occupation: draft.occupation.trim(), pinConfigured: Boolean(draft.pin || draft.pinConfigured), status: draft.status }
+    onSave({ ...safeDraft, ...(draft.pin ? { pin: draft.pin } : {}) })
+  }

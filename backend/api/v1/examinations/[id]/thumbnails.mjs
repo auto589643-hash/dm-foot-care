@@ -23,9 +23,9 @@ export default async function handler(req, res) {
     const examinationId = queryParam(req, 'id')
     if (!await getOwnedExamination(session.user.id, examinationId)) return sendJson(res, 404, { message: 'ไม่พบรายการตรวจ' })
     const body = await readJsonBody(req)
-    const thumbnails = {}
-    for (const [position, value] of Object.entries(body.thumbnails || {})) {
-      if (!positions.has(position)) continue
+    const startedAt = Date.now()
+    const entries = await Promise.all(Object.entries(body.thumbnails || {}).map(async ([position, value]) => {
+      if (!positions.has(position)) return null
       const { mimeType, bytes } = decodeThumbnail(value)
       const path = `${session.user.id}/${examinationId}/${position}.webp`
       await supabaseStorage(`/object/dm-foot-thumbnails/${path.split('/').map(encodeURIComponent).join('/')}`, {
@@ -38,8 +38,11 @@ export default async function handler(req, res) {
         headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({ thumbnail_path: path, thumbnail_metadata: { mimeType, generatedAt: new Date().toISOString() } }),
       })
-      thumbnails[position] = await createStorageSignedUrl('dm-foot-thumbnails', path)
-    }
+      const signedUrl = await createStorageSignedUrl('dm-foot-thumbnails', path)
+      return [position, signedUrl]
+    }))
+    const thumbnails = Object.fromEntries(entries.filter(Boolean))
+    console.info(JSON.stringify({ event: 'dmfc_thumbnail_timing', examinationId, count: Object.keys(thumbnails).length, totalMs: Date.now() - startedAt }))
     return sendJson(res, 200, { thumbnails })
   } catch (error) {
     console.error('thumbnail request failed', error)

@@ -1,0 +1,390 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  Camera,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
+  ClipboardCheck,
+  Clock3,
+  Eye,
+  FileCheck2,
+  Footprints,
+  HeartPulse,
+  History,
+  Home,
+  Image as ImageIcon,
+  Info,
+  LayoutDashboard,
+  Library,
+  List,
+  LogOut,
+  MoreHorizontal,
+  Plus,
+  RotateCcw,
+  ScanLine,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Stethoscope,
+  TrendingDown,
+  TrendingUp,
+  Type,
+  UserRound,
+  VideoOff,
+  SwitchCamera,
+  Users,
+  WifiOff,
+  X,
+} from 'lucide-react'
+import { diseases, doctorProfile, examinations, footSteps, knowledgeArticles, patientProfile, userExaminations, users as seededUsers } from './data'
+import { clearExaminationDraft, readExaminationDraft, saveExaminationDraft } from './services/draftStorage'
+import type { AuditLogger } from './services/auditLog'
+import { examinationPositions, runAnalysisWorkflow } from './services/analysisWorkflow'
+import { finalizeExamination } from './services/finalizeWorkflow'
+import { MockFootAssessmentProvider, toMockDiseaseMaster } from './services/mockAiProvider'
+import { BrowserThumbnailService, InMemoryExaminationRepository, InMemoryOriginalImageArchive, photosToBlobs } from './services/mockPipelineAdapters'
+import { calculateAge, calculateGeneration, withDerivedProfile } from './services/profileMetrics'
+import { evaluateImageQuality, type ImageQualityResult } from './services/imageQuality'
+import { createRuntimeIntegrationState, type RuntimeIntegrations } from './services/runtimeIntegrations'
+import { createAnalysisImages } from './services/thumbnailService'
+import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, OriginalImageArchive, ThumbnailService } from './services/contracts'
+import type { Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, Role, Severity, UserRecord } from './types'
+
+type ExamStage = 'intro' | 'capture' | 'review' | 'processing' | 'human-review' | 'summary'
+type HistoryView = 'list' | 'calendar' | 'insight'
+
+const severityRank: Record<Severity, number> = { เล็กน้อย: 1, ปานกลาง: 2, รุนแรง: 3 }
+const severityOrder: readonly Severity[] = ['เล็กน้อย', 'ปานกลาง', 'รุนแรง']
+
+function getDiseaseSeverityLevels(disease?: Pick<Disease, 'severityLevels' | 'severityCriteria'>): DiseaseSeverityLevel[] {
+  if (disease?.severityLevels?.length) {
+    return [...disease.severityLevels].sort((left, right) => left.rank - right.rank)
+  }
+  const parsed = new Map<Severity, string>()
+  for (const segment of (disease?.severityCriteria ?? '').split('·')) {
+    const separator = segment.indexOf(':')
+    if (separator < 0) continue
+    const label = segment.slice(0, separator).trim() as Severity
+    if (label in severityRank) parsed.set(label, segment.slice(separator + 1).trim())
+  }
+  return severityOrder.map((label, index) => ({ label, rank: index + 1, criteria: parsed.get(label) ?? '' }))
+}
+
+function serializeSeverityLevels(levels: readonly DiseaseSeverityLevel[]): string {
+  return levels.filter((level) => level.criteria.trim()).map((level) => `${level.label}: ${level.criteria.trim()}`).join(' · ')
+}
+
+const patientNav: { page: Page; label: string; icon: typeof Home }[] = [
+  { page: 'home', label: 'หน้าหลัก', icon: Home },
+  { page: 'exam', label: 'ตรวจเท้า', icon: ScanLine },
+  { page: 'history', label: 'ประวัติ', icon: History },
+  { page: 'knowledge', label: 'คลังความรู้', icon: BookOpen },
+]
+
+const doctorNav: { page: Page; label: string; icon: typeof Home }[] = [
+  { page: 'admin-home', label: 'ภาพรวม', icon: LayoutDashboard },
+  { page: 'users', label: 'ผู้ใช้งาน', icon: Users },
+  { page: 'diseases', label: 'รายการภาวะ', icon: Stethoscope },
+  { page: 'admin-knowledge', label: 'คลังความรู้', icon: Library },
+]
+
+const mockFindings: Finding[] = [
+  { diseaseId: 'D001', name: 'ผิวแห้ง', detected: true, severity: 'ปานกลาง', confidence: 91, comparison: 'ดีขึ้น' },
+  { diseaseId: 'D002', name: 'หนังด้าน', detected: true, severity: 'เล็กน้อย', confidence: 86, comparison: 'คงที่' },
+  { diseaseId: 'D003', name: 'แผลที่เท้า', detected: false, severity: 'เล็กน้อย', confidence: 94, comparison: 'คงที่' },
+]
+
+const demoAccounts: Record<string, { pin: string; role: Role }> = {
+  DM001: { pin: '1234', role: 'user' },
+  ADMIN: { pin: '1234', role: 'admin' },
+}
+
+function cloneFindings(findings: Finding[]): Finding[] {
+  return findings.map((finding) => ({ ...finding }))
+}
+
+function formatThaiDate(date: Date): string {
+  return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }).format(date)
+}
+
+function formatThaiShortDate(date: Date): string {
+  return new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+}
+
+function formatExamTime(date: Date): string {
+  return new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
+}
+
+function App() {
+  const runtimeState = useMemo(() => createRuntimeIntegrationState({ VITE_DMFC_API_BASE_URL: import.meta.env.VITE_DMFC_API_BASE_URL }), [])
+  const integrations = runtimeState.integrations
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    if (integrations) return null
+    const savedRole = window.localStorage.getItem('dmfc-demo-role') as Role | null
+    return savedRole === 'admin' ? withDerivedProfile(doctorProfile) : savedRole === 'user' ? withDerivedProfile(patientProfile) : null
+  })
+  const [page, setPage] = useState<Page>(profile?.role === 'admin' ? 'admin-home' : 'home')
+  const [restoring, setRestoring] = useState(Boolean(integrations))
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profileDialog, setProfileDialog] = useState<'profile' | 'accessibility' | null>(null)
+  const [toast, setToast] = useState('')
+  const [examStage, setExamStage] = useState<ExamStage>('intro')
+  const [patientExaminations, setPatientExaminations] = useState(examinations)
+  const [patientKnowledge, setPatientKnowledge] = useState(knowledgeArticles)
+  const [patientDiseases, setPatientDiseases] = useState(diseases)
+
+  const loadPatientExaminations = useCallback(async () => {
+    if (!integrations?.repository.listForCurrentUser) return
+    try {
+      setPatientExaminations(await integrations.repository.listForCurrentUser())
+    } catch {
+      // Keep the authenticated shell usable; the backend can expose a retry UI later.
+    }
+  }, [integrations])
+
+  const loadPatientKnowledge = useCallback(async () => {
+    if (!integrations?.knowledge) return
+    try {
+      const content = await integrations.knowledge.listPublished()
+      setPatientKnowledge(content.articles)
+      if (content.diseases.length) setPatientDiseases(content.diseases)
+    } catch {
+      // Keep the patient shell usable with the last known content if the API is unavailable.
+    }
+  }, [integrations])
+
+  useEffect(() => {
+    if (!integrations) return
+    let cancelled = false
+    void integrations.auth.restoreSession().then((restored) => {
+      if (cancelled || !restored) return
+      const nextProfile = withDerivedProfile(restored)
+      setProfile(nextProfile)
+      setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
+      if (nextProfile.role === 'user') {
+        void loadPatientExaminations()
+        void loadPatientKnowledge()
+      }
+    }).catch(() => {
+      // Keep the login screen actionable when the backend is temporarily unavailable.
+    }).finally(() => {
+      if (!cancelled) setRestoring(false)
+    })
+    return () => { cancelled = true }
+  }, [integrations, loadPatientExaminations, loadPatientKnowledge])
+
+  useEffect(() => {
+    if (!toast) return
+    const timeout = window.setTimeout(() => setToast(''), 3200)
+    return () => window.clearTimeout(timeout)
+  }, [toast])
+
+  const login = (authenticatedProfile: Profile) => {
+    const nextProfile = withDerivedProfile(authenticatedProfile)
+    if (!integrations) window.localStorage.setItem('dmfc-demo-role', nextProfile.role)
+    setProfile(nextProfile)
+    setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
+    void integrations?.audit.append({ actorId: nextProfile.id, eventType: 'login', entityType: 'session', entityId: nextProfile.id, payload: { role: nextProfile.role } }).catch(() => {})
+    if (nextProfile.role === 'user') {
+      void loadPatientExaminations()
+      void loadPatientKnowledge()
+    }
+  }
+
+  const logout = () => {
+    if (integrations && profile) {
+      void integrations.audit.append({ actorId: profile.id, eventType: 'logout', entityType: 'session', entityId: profile.id, payload: { role: profile.role } }).catch(() => {})
+    }
+    if (integrations) {
+      void integrations.auth.signOut().catch(() => {})
+      runtimeState.setAccessToken(null)
+    } else {
+      window.localStorage.removeItem('dmfc-demo-role')
+    }
+    setProfile(null)
+    setPatientExaminations(examinations)
+    setPatientKnowledge(knowledgeArticles)
+    setPatientDiseases(diseases)
+    setProfileOpen(false)
+    setProfileDialog(null)
+    setExamStage('intro')
+  }
+
+  const goTo = (nextPage: Page) => {
+    setPage(nextPage)
+    setProfileOpen(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  if (restoring) return <main className="login-page"><section className="login-panel"><div className="login-form-wrap"><span className="eyebrow">DM Foot Care</span><h2>กำลังตรวจสอบ session</h2><p>กรุณารอสักครู่…</p></div></section></main>
+  if (!profile) return <LoginScreen onLogin={login} authService={integrations?.auth} />
+
+  const navItems = profile.role === 'admin' ? doctorNav : patientNav
+
+  return (
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">ข้ามไปยังเนื้อหาหลัก</a>
+      <DesktopRail profile={profile} page={page} navItems={navItems} onNavigate={goTo} onLogout={logout} />
+      <div className="app-column">
+        <TopBar
+          profile={profile}
+          open={profileOpen}
+          onToggle={() => setProfileOpen((value) => !value)}
+          onLogout={logout}
+          onProfile={() => { setProfileDialog('profile'); setProfileOpen(false) }}
+          onAccessibility={() => { setProfileDialog('accessibility'); setProfileOpen(false) }}
+        />
+        <main id="main-content" className="main-content">
+          {profile.role === 'user' ? (
+              <PatientPages
+              profile={profile}
+              page={page}
+              setPage={goTo}
+              examStage={examStage}
+              setExamStage={setExamStage}
+              examinations={patientExaminations}
+              knowledgeArticles={patientKnowledge}
+              diseaseRecords={patientDiseases}
+              integrations={integrations}
+              onExamCompleted={(exam) => setPatientExaminations((current) => [exam, ...current.filter((item) => item.id !== exam.id)])}
+              showToast={setToast}
+            />
+          ) : (
+            <DoctorPages page={page} setPage={goTo} showToast={setToast} adminService={integrations?.admin} auditLogger={integrations?.audit} />
+          )}
+        </main>
+        {page !== 'exam' ? <MobileNav page={page} items={navItems} onNavigate={goTo} /> : null}
+      </div>
+      {toast ? <div className="toast" role="status"><CircleCheck size={19} />{toast}</div> : null}
+      {profileDialog ? <ProfileDialog profile={profile} mode={profileDialog} onClose={() => setProfileDialog(null)} /> : null}
+    </div>
+  )
+}
+
+function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => void; authService?: AuthService }) {
+  const [username, setUsername] = useState(authService ? '' : 'DM001')
+  const [pin, setPin] = useState(authService ? '' : '1234')
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [registration, setRegistration] = useState({ username: '', displayName: '', dateOfBirth: '', occupation: '', pin: '', confirmPin: '' })
+  const [registrationComplete, setRegistrationComplete] = useState(false)
+  const [showDemo, setShowDemo] = useState(false)
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    const normalizedUsername = username.trim().toUpperCase()
+    if (!normalizedUsername || pin.length !== 4) {
+      setError('กรุณากรอกชื่อผู้ใช้และ PIN 4 หลักให้ครบ')
+      return
+    }
+    setSubmitting(true)
+    if (authService) {
+      try {
+        onLogin(await authService.signInWithUsername(normalizedUsername, pin))
+      } catch {
+        setError('เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลหรือลองใหม่อีกครั้ง')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+    const account = demoAccounts[normalizedUsername]
+    if (!account || account.pin !== pin) {
+      setSubmitting(false)
+      setError('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง')
+      return
+    }
+    window.setTimeout(() => {
+      onLogin(withDerivedProfile(account.role === 'admin' ? doctorProfile : patientProfile))
+      setSubmitting(false)
+    }, 550)
+  }
+
+  const fillDemo = (role: Role) => {
+    setUsername(role === 'admin' ? 'ADMIN' : 'DM001')
+    setPin('1234')
+    setShowDemo(false)
+    setError('')
+  }
+
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    if (!authService) return
+    const normalizedUsername = registration.username.trim().toUpperCase()
+    if (!normalizedUsername || !registration.displayName.trim() || !registration.dateOfBirth || !registration.occupation.trim()) {
+      setError('กรุณากรอกข้อมูลลงทะเบียนให้ครบทุกช่อง')
+      return
+    }
+    if (!/^\d{4}$/.test(registration.pin) || registration.pin !== registration.confirmPin) {
+      setError('กรุณากรอก PIN 4 หลักให้ตรงกันทั้งสองช่อง')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await authService.register({
+        username: normalizedUsername,
+        displayName: registration.displayName.trim(),
+        dateOfBirth: registration.dateOfBirth,
+        occupation: registration.occupation.trim(),
+        pin: registration.pin,
+      })
+      setRegistrationComplete(true)
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : 'ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const updateRegistration = (key: keyof typeof registration, value: string) => setRegistration((current) => ({ ...current, [key]: value }))
+
+  return (
+    <main className="login-page">
+      <section className="login-visual" aria-label="DM Foot Care">
+        <div className="brand brand-on-blue"><BrandMark /><span>DM Foot Care</span></div>
+        <div className="login-message">
+          <span className="eyebrow eyebrow-light">ดูแลอย่างต่อเนื่อง</span>
+          <h1>ทุกก้าว เริ่มจาก<br />การใส่ใจเท้า</h1>
+          <p>ติดตามสุขภาพเท้าอย่างเป็นขั้นตอน พร้อมคำแนะนำภายใต้การดูแลของแพทย์</p>
+        </div>
+        <FourFrameIllustration />
+        <div className="clinical-note"><ShieldCheck size={18} /><span>ข้อมูลและรูปภาพจัดเก็บแบบเป็นส่วนตัว</span></div>
+      </section>
+
+      <section className="login-panel">
+        <div className="mobile-login-brand brand"><BrandMark /><span>DM Foot Care</span></div>
+        <div className="login-form-wrap">
+          {mode === 'login' ? <><div className="login-heading">
+            <span className="eyebrow">ยินดีต้อนรับ</span>
+            <h2>เข้าสู่ระบบ</h2>
+            <p>กรอกชื่อผู้ใช้และ PIN ของคุณ</p>
+          </div>
+          <form onSubmit={handleLogin} noValidate>
+            <label className="field-label" htmlFor="username">ชื่อผู้ใช้</label>
+            <div className="input-wrap"><UserRound size={20} /><input id="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="เช่น DM001" /></div>
+            <label className="field-label" htmlFor="pin">PIN 4 หลัก</label>
+            <div className="input-wrap"><ShieldCheck size={20} /><input id="pin" inputMode="numeric" autoComplete="current-password" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} placeholder="••••" /></div>
+            {error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}
+            <button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button>
+          </form>
+          {authService ? <button className="login-mode-switch" type="button" onClick={() => { setMode('register'); setError('') }}>ยังไม่มีบัญชี? ลงทะเบียนใช้งาน</button> : null}
+          {!authService ? <div className="demo-access">
+            <button className="text-button" type="button" aria-expanded={showDemo} onClick={() => setShowDemo((value) => !value)}>บัญชีสำหรับทดลองใช้ <ChevronDown size={16} /></button>
+            {showDemo ? (
+              <div className="demo-options">
+                <button type="button" onClick={() => fillDemo('user')}><UserRound size={18} /><span><strong>User</strong><small>DM001 / 1234</small></span></button>
+                <button type="button" onClick={() => fillDemo('admin')}><Stethoscope size={18} /><span><strong>Admin</strong><small>ADMIN / 1234</small></span></button>
+              </div>
+            ) : null}
+          </div> : null}

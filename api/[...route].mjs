@@ -7,6 +7,7 @@ import originalImages from '../backend/api/v1/original-images.mjs'
 import authSession from '../backend/api/v1/auth/session.mjs'
 import authSignOut from '../backend/api/v1/auth/sign-out.mjs'
 import authSignIn from '../backend/api/v1/auth/username/sign-in.mjs'
+import authRegister from '../backend/api/v1/auth/register.mjs'
 import drafts from '../backend/api/v1/examinations/drafts.mjs'
 import analysisRuns from '../backend/api/v1/examinations/[id]/analysis-runs.mjs'
 import confirmedFindings from '../backend/api/v1/examinations/[id]/confirmed-findings.mjs'
@@ -20,6 +21,7 @@ import adminUsers from '../backend/api/v1/admin/users.mjs'
 import adminDiseases from '../backend/api/v1/admin/diseases.mjs'
 import adminKnowledge from '../backend/api/v1/admin/knowledge.mjs'
 import adminUserExaminations from '../backend/api/v1/admin/user-examinations.mjs'
+import adminUser from '../backend/api/v1/admin/user.mjs'
 import { sendJson } from '../backend/api/_lib/http.mjs'
 
 function pathAndQuery(req) {
@@ -38,6 +40,7 @@ export default async function handler(req, res) {
   const path = pathAndQuery(req)
   if (path === 'health') return health(req, res)
   if (path === 'v1/auth/username/sign-in') return authSignIn(req, res)
+  if (path === 'v1/auth/register') return authRegister(req, res)
   if (path === 'v1/auth/session') return authSession(req, res)
   if (path === 'v1/auth/sign-out') return authSignOut(req, res)
   if (path === 'v1/analysis') return analysis(req, res)
@@ -51,7 +54,12 @@ export default async function handler(req, res) {
   if (path === 'v1/admin/diseases') return adminDiseases(req, res)
   if (path === 'v1/admin/knowledge') return adminKnowledge(req, res)
 
-  let match = path.match(/^v1\/examinations\/([^/]+)\/images\/([^/]+)$/)
+  let match = path.match(/^v1\/admin\/diseases\/([^/]+)(?:\/(status))?$/)
+  if (match) {
+    withParams(req, { diseaseId: decodeURIComponent(match[1]), action: match[2] || '' })
+    return adminDiseases(req, res)
+  }
+  match = path.match(/^v1\/examinations\/([^/]+)\/images\/([^/]+)$/)
   if (match) {
     withParams(req, { id: decodeURIComponent(match[1]), position: decodeURIComponent(match[2]) })
     return examinationImagePosition(req, res)
@@ -60,6 +68,11 @@ export default async function handler(req, res) {
   if (match) {
     withParams(req, { userId: decodeURIComponent(match[1]) })
     return adminUserExaminations(req, res)
+  }
+  match = path.match(/^v1\/admin\/users\/([^/]+)(?:\/(status))?$/)
+  if (match) {
+    withParams(req, { userId: decodeURIComponent(match[1]), action: match[2] || '' })
+    return adminUser(req, res)
   }
   match = path.match(/^v1\/examinations\/([^/]+)\/(analysis-runs|confirmed-findings|status|thumbnail-references|thumbnails)$/)
   if (match) {

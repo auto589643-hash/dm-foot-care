@@ -6,6 +6,7 @@ export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   setCors(res)
   if (req.method !== 'POST') return sendJson(res, 405, { message: 'Method not allowed' })
+  const startedAt = Date.now()
   try {
     const session = await requireSupabaseUser(req, res)
     if (!session) return
@@ -21,7 +22,9 @@ export default async function handler(req, res) {
     }
     const data = await readBinaryBody(req)
     if (!data.length) return sendJson(res, 400, { message: 'Image body is empty' })
+    const driveStartedAt = Date.now()
     const file = await uploadFile(folderId, filename, req.headers['content-type'] || 'application/octet-stream', data)
+    console.info(JSON.stringify({ event: 'dmfc_drive_upload_timing', position, bytes: data.length, driveMs: Date.now() - driveStartedAt, totalMs: Date.now() - startedAt }))
     return sendJson(res, 201, { fileId: file.id })
   } catch (error) {
     console.error('Drive image upload failed', error)

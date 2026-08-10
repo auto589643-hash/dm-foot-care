@@ -1,0 +1,322 @@
+  const [confirmedFindings, setConfirmedFindings] = useState(() => cloneFindings(mockFindings))
+  const [thumbnails, setThumbnails] = useState<Partial<Record<FootPosition, string>>>({})
+  const [completedExam, setCompletedExam] = useState<Examination | null>(null)
+  const [isFinalizing, setIsFinalizing] = useState(false)
+  const examinationIdRef = useRef(integrations ? '' : 'EX-DEMO-1')
+  const archiveRef = useRef<OriginalImageArchive>(integrations?.archive ?? new InMemoryOriginalImageArchive())
+  const repositoryRef = useRef<ExaminationRepository>(integrations?.repository ?? new InMemoryExaminationRepository())
+  const thumbnailServiceRef = useRef<ThumbnailService>(integrations?.thumbnails ?? new BrowserThumbnailService())
+  const thumbnailJobRef = useRef<Promise<Record<FootPosition, string>> | null>(null)
+  const [processStep, setProcessStep] = useState(0)
+  const [analysisError, setAnalysisError] = useState('')
+  const [analysisAttempt, setAnalysisAttempt] = useState(0)
+  const [finalizeError, setFinalizeError] = useState('')
+
+  const ensureExaminationDraft = async (): Promise<boolean> => {
+    if (examinationIdRef.current) return true
+    if (!integrations) {
+      examinationIdRef.current = `EX-DEMO-${Date.now()}`
+      return true
+    }
+    try {
+      const draft = await repositoryRef.current.createDraft(profile.id)
+      examinationIdRef.current = draft.id
+      void integrations?.audit.append({ actorId: profile.id, eventType: 'examination_created', entityType: 'examination', entityId: draft.id, payload: { status: draft.status } }).catch(() => {})
+      return true
+    } catch {
+      setAnalysisError('เริ่มรายการตรวจไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่')
+      return false
+    }
+  }
+
+  const beginAnalysis = async () => {
+    setAnalysisError('')
+    if (!(await ensureExaminationDraft())) return
+    setProcessStep(0)
+    setStage('processing')
+  }
+
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0)
+    const frame = window.requestAnimationFrame(() => window.scrollTo(0, 0))
+    const timeout = window.setTimeout(() => window.scrollTo(0, 0), 80)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [stage])
+
+  useEffect(() => {
+    if (stage === 'capture' || stage === 'review') saveExaminationDraft({ stage, step, photos })
+    if (stage === 'summary') clearExaminationDraft()
+  }, [stage, step, photos])
+
+  useEffect(() => {
+    if (stage !== 'processing') return
+    let cancelled = false
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return () => { cancelled = true }
+    }
+    const progressTimers = [
+      window.setTimeout(() => setProcessStep(1), 650),
+      window.setTimeout(() => setProcessStep(2), 1400),
+      window.setTimeout(() => setProcessStep(3), 2300),
+    ]
+    const provider: FootAssessmentProvider = integrations?.provider ?? new MockFootAssessmentProvider(toMockDiseaseMaster(diseaseRecords))
+    const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
+    void photosToBlobs(capturedPhotos).then((images) => {
+      if (!thumbnailJobRef.current) {
+        const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
+        thumbnailJobRef.current = thumbnailJob
+        void thumbnailJob.then((prepared) => setThumbnails(prepared)).catch((error) => {
+          thumbnailJobRef.current = null
+          console.warn('Thumbnail preparation will be retried after review', error)
+        })
+      }
+
+      return runAnalysisWorkflow({
+        examinationId: examinationIdRef.current,
+        username: profile.username,
+        images,
+        analysisImages: createAnalysisImages(capturedPhotos),
+        diseaseMasterVersion: '1',
+        examinedAt: new Date().toISOString(),
+        archive: archiveRef.current,
+        provider,
+        repository: repositoryRef.current,
+        idempotencyKey: `${examinationIdRef.current}:attempt-${analysisAttempt}`,
+        auditLogger: integrations?.audit,
+        actorId: profile.id,
+      })
+    }).then((analysis) => {
+      if (cancelled) return
+      setAiFindings(analysis.findings)
+      setConfirmedFindings(cloneFindings(analysis.findings))
+      setProcessStep(3)
+      window.setTimeout(() => { if (!cancelled) setStage('human-review') }, 450)
+    }).catch((error) => {
+      if (cancelled) return
+      console.error('Foot analysis workflow failed', error)
+      progressTimers.forEach(window.clearTimeout)
+      setAnalysisError('ระบบวิเคราะห์ผลไม่สำเร็จชั่วคราว สามารถลองใหม่ได้โดยไม่ต้องถ่ายภาพซ้ำ')
+    })
+    return () => { cancelled = true; progressTimers.forEach(window.clearTimeout) }
+  }, [analysisAttempt, diseaseRecords, integrations, photos, profile.id, profile.username, stage, setStage])
+
+  const finalize = async () => {
+    setIsFinalizing(true)
+    setFinalizeError('')
+    const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
+    const reviewChangedCount = confirmedFindings.reduce((count, finding) => {
+      const aiFinding = aiFindings.find((item) => item.diseaseId === finding.diseaseId)
+      return count + (aiFinding && (aiFinding.detected !== finding.detected || aiFinding.severity !== finding.severity) ? 1 : 0)
+    }, 0)
+    try {
+      const images = await photosToBlobs(capturedPhotos)
+      let preparedThumbnails = Object.keys(thumbnails).length === examinationPositions.length
+        ? thumbnails as Record<FootPosition, string>
+        : undefined
+      if (!preparedThumbnails && thumbnailJobRef.current) {
+        try {
+          preparedThumbnails = await thumbnailJobRef.current
+        } catch {
+          // Finalization retries thumbnail generation below.
+        }
+      }
+      const nextThumbnails = await finalizeExamination({
+        examinationId: examinationIdRef.current,
+        images,
+        thumbnailService: thumbnailServiceRef.current,
+        repository: repositoryRef.current,
+        confirmedFindings: confirmedFindings.filter((finding) => finding.detected),
+        confirmedBy: profile.id,
+        auditLogger: integrations?.audit,
+        actorId: profile.id,
+        reviewChangedCount,
+        precomputedThumbnails: preparedThumbnails,
+      })
+      setThumbnails(nextThumbnails)
+      const completedAt = new Date()
+      const completed: Examination = { id: examinationIdRef.current || `EX${String(Date.now()).slice(-6)}`, date: completedAt.toISOString().slice(0, 10), displayDate: formatThaiShortDate(completedAt), time: formatExamTime(completedAt), status: 'complete', findings: cloneFindings(confirmedFindings.filter((finding) => finding.detected)), thumbnails: nextThumbnails }
+      setCompletedExam(completed)
+      onCompleted(completed)
+      setStage('summary')
+    } catch {
+      setFinalizeError('บันทึกผลและเตรียมภาพสรุปไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่')
+    } finally {
+      setIsFinalizing(false)
+    }
+  }
+
+  const reset = () => {
+    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings(cloneFindings(mockFindings)); setConfirmedFindings(cloneFindings(mockFindings)); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; examinationIdRef.current = integrations ? '' : `EX-DEMO-${Date.now()}`; archiveRef.current = integrations?.archive ?? new InMemoryOriginalImageArchive(); repositoryRef.current = integrations?.repository ?? new InMemoryExaminationRepository(); thumbnailServiceRef.current = integrations?.thumbnails ?? new BrowserThumbnailService(); setStage('intro')
+  }
+
+  if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
+  if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => step === 3 ? setStage('review') : setStep((value) => value + 1)} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
+  if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
+  if (stage === 'processing') return <ProcessingScreen current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
+  if (stage === 'human-review') return <HumanReview photos={photos} diseaseRecords={diseaseRecords} aiFindings={aiFindings} confirmedFindings={confirmedFindings} setConfirmedFindings={setConfirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
+  return completedExam ? <SummaryReport examination={completedExam} photos={thumbnails} diseaseRecords={diseaseRecords} onHome={onHome} onRestart={reset} /> : null
+}
+
+function ExamIntro({ hasDraft, onResume, onStart, onBack }: { hasDraft: boolean; onResume: () => void; onStart: () => void; onBack: () => void }) {
+  return (
+    <div className="page narrow-page exam-intro">
+      <PageBack onClick={onBack}>กลับหน้าหลัก</PageBack>
+      <div className="exam-intro-visual"><FourFrameIllustration /><span className="camera-badge"><Camera size={22} /></span></div>
+      <span className="eyebrow">การตรวจเท้า</span>
+      <h1>เตรียมถ่ายภาพเท้า 4 มุม</h1>
+      <p className="page-lead">ใช้พื้นที่สว่าง วางโทรศัพท์ให้นิ่ง และทำตามกรอบทีละขั้น</p>
+      <ol className="prep-list">
+        <li><span>1</span><div><strong>ทำความสะอาดและเช็ดเท้าให้แห้ง</strong><p>นำถุงเท้าและสิ่งปิดบังออกให้เรียบร้อย</p></div></li>
+        <li><span>2</span><div><strong>เลือกบริเวณที่มีแสงเพียงพอ</strong><p>หลีกเลี่ยงเงามืดและแสงสะท้อนโดยตรง</p></div></li>
+        <li><span>3</span><div><strong>เตรียมถ่ายทั้งหมด 4 ภาพ</strong><p>หลังเท้าและฝ่าเท้า ทั้งข้างซ้ายและขวา</p></div></li>
+      </ol>
+      <div className="privacy-note"><ShieldCheck size={20} /><span>รูปภาพใช้เพื่อการประเมินภายใต้โครงการนี้เท่านั้น</span></div>
+      {hasDraft ? <div className="draft-resume" role="status"><Clock3 size={20} /><div><strong>มีการตรวจที่ยังทำไม่เสร็จ</strong><p>ระบบจำภาพที่ถ่ายไว้บนอุปกรณ์นี้ให้แล้ว</p><div><button className="button button-primary button-small" type="button" onClick={onResume}>ทำต่อจากเดิม</button><button className="button button-ghost button-small" type="button" onClick={onStart}>เริ่มใหม่</button></div></div></div> : null}
+      <button className="button button-primary button-large" type="button" onClick={onStart}><Camera size={21} />เปิดกล้องและเริ่มถ่าย</button>
+    </div>
+  )
+}
+
+type CameraState = 'checking' | 'ready' | 'denied' | 'unsupported'
+type QualityState = 'idle' | 'checking' | 'passed' | 'retry'
+type QualityResult = ImageQualityResult
+
+async function inspectImageQuality(dataUrl: string): Promise<QualityResult> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 32
+      canvas.height = 32
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) {
+        resolve(evaluateImageQuality({ width: image.naturalWidth, height: image.naturalHeight }))
+        return
+      }
+      context.drawImage(image, 0, 0, 32, 32)
+      const pixels = context.getImageData(0, 0, 32, 32).data
+      const luminances: number[] = []
+      for (let index = 0; index < pixels.length; index += 4) luminances.push((pixels[index] * 0.299) + (pixels[index + 1] * 0.587) + (pixels[index + 2] * 0.114))
+      const mean = luminances.reduce((sum, value) => sum + value, 0) / luminances.length
+      const variance = luminances.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / luminances.length
+      resolve(evaluateImageQuality({ width: image.naturalWidth, height: image.naturalHeight, meanLuminance: mean, luminanceVariance: variance }))
+    }
+    image.onerror = () => resolve({ passed: false, message: 'อ่านภาพไม่สำเร็จ ลองเลือกไฟล์หรือถ่ายภาพใหม่', checks: [{ label: 'อ่านภาพได้', passed: false }] })
+    image.src = dataUrl
+  })
+}
+
+function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number; photos: Partial<Record<FootPosition, string>>; setPhotos: React.Dispatch<React.SetStateAction<Partial<Record<FootPosition, string>>>>; onNext: () => void; onBack: () => void }) {
+  const current = footSteps[step]
+  const position = current.id as FootPosition
+  const photo = photos[position]
+  const inputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const cameraRequestRef = useRef(0)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [cameraState, setCameraState] = useState<CameraState>('checking')
+  const [qualityState, setQualityState] = useState<QualityState>(photo === 'demo' ? 'passed' : 'idle')
+  const [qualityResult, setQualityResult] = useState<QualityResult | null>(photo === 'demo' ? { passed: true, message: 'ภาพตัวอย่างพร้อมใช้สำหรับทดลอง flow', checks: [{ label: 'ภาพตัวอย่าง', passed: true }] } : null)
+
+  const startCamera = useCallback(async () => {
+    const requestId = cameraRequestRef.current + 1
+    cameraRequestRef.current = requestId
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState('unsupported')
+      return
+    }
+    setCameraState('checking')
+    const timeoutId = window.setTimeout(() => {
+      if (cameraRequestRef.current === requestId) {
+        cameraRequestRef.current += 1
+        setCameraState('denied')
+      }
+    }, 3000)
+    try {
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false })
+      window.clearTimeout(timeoutId)
+      if (cameraRequestRef.current !== requestId) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      streamRef.current = stream
+      setCameraState('ready')
+    } catch (error) {
+      window.clearTimeout(timeoutId)
+      if (cameraRequestRef.current !== requestId) return
+      const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
+      setCameraState(denied ? 'denied' : 'unsupported')
+    }
+  }, [facingMode])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void startCamera(), 0)
+    return () => {
+      window.clearTimeout(timer)
+      cameraRequestRef.current += 1
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [startCamera, position])
+
+  useEffect(() => {
+    if (videoRef.current && streamRef.current) videoRef.current.srcObject = streamRef.current
+  }, [cameraState, photo])
+
+  const clearPhoto = () => {
+    setPhotos((value) => ({ ...value, [position]: undefined }))
+    setQualityState('idle')
+    setQualityResult(null)
+    window.setTimeout(() => void startCamera(), 0)
+  }
+
+  const switchCamera = () => {
+    setFacingMode((currentMode) => currentMode === 'environment' ? 'user' : 'environment')
+  }
+
+  const setPhotoAndInspect = async (dataUrl: string, nextQualityResult?: QualityResult) => {
+    setPhotos((value) => ({ ...value, [position]: dataUrl }))
+    setQualityState('checking')
+    const result = nextQualityResult ?? await inspectImageQuality(dataUrl)
+    setQualityResult(result)
+    setQualityState(result.passed ? 'passed' : 'retry')
+  }
+
+  const readPhoto = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => { void setPhotoAndInspect(String(reader.result)) }
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  const capturePhoto = async () => {
+    const video = videoRef.current
+    if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
+      return
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+    // A camera frame is already a rendered copy, so high-quality JPEG keeps
+    // clinical detail while avoiding multi-megabyte PNG uploads on mobile.
+    await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
+  }
+
+  const useDemoPhoto = () => {
+    void setPhotoAndInspect('demo', { passed: true, message: 'ภาพตัวอย่างพร้อมใช้สำหรับทดลอง flow', checks: [{ label: 'ภาพตัวอย่าง', passed: true }] })
+  }
+
+  const permissionMessage = cameraState === 'denied' ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้เว็บไซต์เข้าถึงกล้อง แล้วลองอีกครั้ง' : 'อุปกรณ์นี้ไม่รองรับกล้องบนเว็บ สามารถเลือกภาพจากเครื่องแทนได้'
+
+  return (
+    <div className="capture-page">
+      <header className="capture-header"><button className="icon-button" type="button" aria-label="ย้อนกลับ" onClick={onBack}><ArrowLeft size={22} /></button><div><strong>{current.label}</strong><span>{step + 1} จาก 4</span></div><button className="text-button" type="button" onClick={() => { setPhotos({}); clearPhoto() }}>เริ่มใหม่</button></header>
+      <div className="step-segments" aria-label={`ขั้นตอน ${step + 1} จาก 4`}>{footSteps.map((item, index) => <span key={item.id} className={index <= step ? 'complete' : ''} />)}</div>

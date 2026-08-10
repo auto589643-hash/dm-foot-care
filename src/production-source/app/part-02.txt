@@ -1,0 +1,173 @@
+          <p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" autoComplete="username" value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" /><label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" autoComplete="name" value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} /><div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" type="date" value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} /></div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} /></div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError('') }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function BrandMark() {
+  return <span className="brand-mark" aria-hidden="true"><Footprints size={20} /></span>
+}
+
+function FourFrameIllustration() {
+  return (
+    <div className="four-frame-art" aria-hidden="true">
+      <div className="frame-cross frame-cross-v" /><div className="frame-cross frame-cross-h" />
+      <div className="foot-shape foot-left"><span /><span /><span /><span /><span /></div>
+      <div className="foot-shape foot-right"><span /><span /><span /><span /><span /></div>
+      <span className="scan-corner top-left" /><span className="scan-corner top-right" /><span className="scan-corner bottom-left" /><span className="scan-corner bottom-right" />
+    </div>
+  )
+}
+
+function DesktopRail({ profile, page, navItems, onNavigate, onLogout }: { profile: Profile; page: Page; navItems: typeof patientNav; onNavigate: (page: Page) => void; onLogout: () => void }) {
+  return (
+    <aside className="desktop-rail">
+      <div className="brand"><BrandMark /><span>DM Foot Care</span></div>
+      <nav aria-label="เมนูหลัก">
+        {navItems.map((item) => <NavButton key={item.page} item={item} active={page === item.page} onNavigate={onNavigate} />)}
+      </nav>
+      <div className="rail-user">
+        <Avatar profile={profile} />
+        <div><strong>{profile.displayName}</strong><small>{profile.role === 'admin' ? 'Admin' : profile.username}</small></div>
+        <button className="icon-button" type="button" aria-label="ออกจากระบบ" onClick={onLogout}><LogOut size={18} /></button>
+      </div>
+    </aside>
+  )
+}
+
+function MobileNav({ page, items, onNavigate }: { page: Page; items: typeof patientNav; onNavigate: (page: Page) => void }) {
+  return (
+    <nav className="mobile-nav" aria-label="เมนูหลัก">
+      {items.map((item) => <NavButton key={item.page} item={item} active={page === item.page} onNavigate={onNavigate} />)}
+    </nav>
+  )
+}
+
+function NavButton({ item, active, onNavigate }: { item: (typeof patientNav)[number]; active: boolean; onNavigate: (page: Page) => void }) {
+  const Icon = item.icon
+  return <button className={active ? 'nav-item active' : 'nav-item'} type="button" aria-current={active ? 'page' : undefined} onClick={() => onNavigate(item.page)}><Icon size={21} /><span>{item.label}</span></button>
+}
+
+function TopBar({ profile, open, onToggle, onLogout, onProfile, onAccessibility }: { profile: Profile; open: boolean; onToggle: () => void; onLogout: () => void; onProfile: () => void; onAccessibility: () => void }) {
+  return (
+    <header className="top-bar">
+      <div className="mobile-brand brand"><BrandMark /><span>DM Foot Care</span></div>
+      <div className="desktop-page-context"><span className="secure-dot" /> ระบบติดตามสุขภาพเท้าแบบส่วนตัว</div>
+      <div className="top-actions">
+        <button className="icon-button notification-button" type="button" aria-label="การแจ้งเตือน"><Bell size={20} /><span /></button>
+        <div className="profile-control" onKeyDown={(event) => { if (event.key === 'Escape' && open) onToggle() }}>
+          <button className="profile-button" type="button" aria-expanded={open} aria-haspopup="menu" aria-controls="profile-menu" onClick={onToggle}><Avatar profile={profile} /><span>{profile.displayName}</span><ChevronDown size={16} /></button>
+          {open ? (
+            <div className="profile-menu" id="profile-menu" role="menu">
+              <div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'admin' ? 'Admin' : 'User'}</span></div>
+              <button role="menuitem" type="button" onClick={onProfile}><UserRound size={18} />ข้อมูลของฉัน</button>
+              <button role="menuitem" type="button" onClick={onAccessibility}><Info size={18} />การช่วยเหลือการใช้งาน</button>
+              <button role="menuitem" type="button" onClick={onLogout}><LogOut size={18} />ออกจากระบบ</button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function ProfileDialog({ profile, mode, onClose }: { profile: Profile; mode: 'profile' | 'accessibility'; onClose: () => void }) {
+  const isProfile = mode === 'profile'
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"><header><div><span className="eyebrow">{isProfile ? 'ข้อมูลส่วนตัว' : 'การช่วยเหลือการใช้งาน'}</span><h2 id="profile-dialog-title">{isProfile ? 'ข้อมูลของฉัน' : 'ใช้งานได้ง่ายสำหรับทุกคน'}</h2><p>{isProfile ? 'ข้อมูลที่ใช้ระบุบัญชีในโครงการ DM Foot Care' : 'คำแนะนำสำหรับการใช้งานบนโทรศัพท์และคอมพิวเตอร์'}</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{isProfile ? <div className="profile-dialog-content"><div className="profile-dialog-identity"><Avatar profile={profile} /><div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'admin' ? 'Admin' : 'User'}</span></div></div><dl className="profile-facts-list"><div><dt>วันเกิด</dt><dd>{profile.dateOfBirth}</dd></div><div><dt>อายุ</dt><dd>{profile.age} ปี</dd></div><div><dt>อาชีพ</dt><dd>{profile.occupation}</dd></div></dl><div className="privacy-note"><ShieldCheck size={20} /><span>ข้อมูลและรูปภาพใช้ภายในโครงการ และไม่เผยแพร่สู่สาธารณะ</span></div></div> : <ul className="accessibility-list"><li><span><Type size={19} /></span><div><strong>อ่านข้อความได้ง่าย</strong><p>ใช้ภาษาไทยสั้น กระชับ และมีหัวข้อบอกขั้นตอนชัดเจน</p></div></li><li><span><ScanLine size={19} /></span><div><strong>ปุ่มใหญ่ กดง่าย</strong><p>ปุ่มหลักและจุดกดสำคัญออกแบบให้เหมาะกับหน้าจอสัมผัส</p></div></li><li><span><Info size={19} /></span><div><strong>ถ้าเจอปัญหา</strong><p>อ่านข้อความแจ้งเตือนและทำตามวิธีแก้ หากยังไม่สำเร็จให้ติดต่อเจ้าหน้าที่โครงการ</p></div></li></ul>}<button className="button button-primary button-large" type="button" onClick={onClose}>ปิด</button></section></div>
+}
+
+function Avatar({ profile }: { profile: Profile }) {
+  return <span className={profile.role === 'admin' ? 'avatar doctor' : 'avatar'} aria-hidden="true">{profile.role === 'admin' ? 'AD' : profile.displayName.slice(0, 2)}</span>
+}
+
+function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations | null; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
+  if (page === 'exam') return <ExaminationFlow profile={profile} diseaseRecords={patientDiseases} integrations={integrations} stage={examStage} setStage={setExamStage} onHome={() => setPage('home')} onCompleted={onExamCompleted} />
+  if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} />
+  if (page === 'knowledge') return <KnowledgePage articles={patientKnowledge} diseaseRecords={patientDiseases} showToast={showToast} />
+  return <PatientHome profile={profile} examinations={patientExaminations} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { const draft = readExaminationDraft(); if (draft) { setExamStage(draft.stage); setPage('exam') } }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
+}
+
+function PatientHome({ profile, examinations: patientExaminations, onStart, onResume, onHistory, onKnowledge }: { profile: Profile; examinations: Examination[]; onStart: () => void; onResume: () => void; onHistory: () => void; onKnowledge: () => void }) {
+  const latest = patientExaminations[0]
+  const hasDraft = Boolean(readExaminationDraft())
+  const latestFindings = latest?.findings ?? []
+  const latestSeverity = latestFindings.length ? latestFindings.reduce((highest, finding) => severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest, latestFindings[0].severity) : null
+  const latestSummary = latestFindings.length ? (latestSeverity === 'รุนแรง' ? 'ควรพบแพทย์' : 'ควรติดตาม') : 'ยังไม่พบภาวะ'
+  return (
+    <div className="page patient-home">
+      <section className="welcome-row reveal">
+        <div><span className="eyebrow">วันนี้ · {formatThaiDate(new Date())}</span><h1>สวัสดี คุณ{profile.displayName.split(' ')[0]}</h1><p>วันนี้สุขภาพเท้าของคุณเป็นอย่างไรบ้าง</p></div>
+        <div className="profile-facts"><span><b>{profile.age}</b> ปี</span><span>{profile.generation}</span><span>{profile.occupation}</span></div>
+      </section>
+
+      {hasDraft ? <section className="resume-banner reveal" role="status"><span className="resume-icon"><Clock3 size={21} /></span><div><span className="eyebrow">ตรวจที่ยังทำไม่เสร็จ</span><h2>คุณถ่ายภาพไว้บางส่วนแล้ว</h2><p>ทำต่อจากขั้นตอนเดิมได้เลย ระบบจะไม่ให้คุณเริ่มใหม่ทั้งหมด</p></div><button className="button button-secondary" type="button" onClick={onResume}>ทำต่อจากเดิม <ArrowRight size={18} /></button></section> : null}
+
+      <section className="scan-hero reveal reveal-delay-1">
+        <div className="scan-copy">
+          <span className="hero-kicker"><span className="pulse-dot" />ถึงเวลาตรวจเท้าประจำสัปดาห์</span>
+          <h2>ใช้เวลาเพียงไม่กี่นาที<br />เพื่อดูแลทุกก้าวของคุณ</h2>
+          <p>ถ่ายภาพเท้า 4 มุมตามคำแนะนำ ระบบจะช่วยประเมินและสรุปการเปลี่ยนแปลงให้</p>
+          <button className="button button-primary button-hero" type="button" onClick={onStart}><ScanLine size={22} />เริ่มตรวจเท้า<ArrowRight size={20} /></button>
+          <small><ShieldCheck size={15} /> รูปภาพต้นฉบับไม่เผยแพร่สู่สาธารณะ</small>
+        </div>
+        <div className="scan-visual"><FourFrameIllustration /><div className="scan-caption"><span>ภาพที่ต้องถ่าย</span><strong>4 มุม</strong></div></div>
+      </section>
+
+      <div className="home-grid">
+        <section className="content-card latest-card reveal reveal-delay-2" aria-labelledby="latest-title">
+          <div className="section-heading"><div><span className="eyebrow">ผลล่าสุด</span><h2 id="latest-title">{latest?.displayDate ?? 'ยังไม่มีผลตรวจ'}</h2></div><span className={latestFindings.length ? 'status-pill attention' : 'status-pill success'}>{latestFindings.length ? <Info size={15} /> : <CircleCheck size={15} />}{latestSummary}</span></div>
+          <div className="latest-summary"><div className="result-count"><strong>{latestFindings.length}</strong><span>ภาวะที่พบ</span></div><div className="finding-list compact">{latestFindings.length ? latestFindings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />) : <p className="muted-copy">ยังไม่มีรายการที่ยืนยันจากการตรวจครั้งล่าสุด</p>}</div></div>
+          <button className="card-link" type="button" onClick={onHistory}>ดูผลการตรวจทั้งหมด <ChevronRight size={18} /></button>
+        </section>
+
+        <section className="content-card progress-card reveal reveal-delay-3" aria-labelledby="progress-title">
+          <div className="section-heading"><div><span className="eyebrow">แนวโน้ม 4 ครั้งล่าสุด</span><h2 id="progress-title">{patientExaminations.length ? 'ผิวแห้งดีขึ้น' : 'เริ่มติดตามผล'}</h2></div><span className="trend-icon good">{patientExaminations.length ? <TrendingDown size={20} /> : <Clock3 size={20} />}</span></div>
+          <MiniTrend examinations={patientExaminations} />
+          <p>{patientExaminations.length ? 'ระดับลดจากรุนแรงเป็นปานกลางเมื่อเทียบกับครั้งก่อน' : 'เมื่อมีผลตรวจ ระบบจะแสดงแนวโน้มการเปลี่ยนแปลงให้ที่นี่'}</p>
+          <button className="card-link" type="button" onClick={onHistory}>ดูแนวโน้มโดยละเอียด <ChevronRight size={18} /></button>
+        </section>
+      </div>
+
+      <section className="timeline-section reveal reveal-delay-3">
+        <div className="section-heading"><div><span className="eyebrow">การตรวจที่ผ่านมา</span><h2>ติดตามอย่างต่อเนื่อง</h2></div><button className="text-link" type="button" onClick={onHistory}>ดูทั้งหมด</button></div>
+        <div className="timeline-row">
+          {patientExaminations.slice(0, 4).map((exam, index) => (
+            <button className={index === 0 ? 'timeline-item current' : 'timeline-item'} type="button" key={exam.id} onClick={onHistory}>
+              <span className="timeline-dot">{index === 0 ? <Check size={14} /> : null}</span><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><em>{exam.findings.length} รายการ</em>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="knowledge-callout reveal">
+        <div className="article-icon"><HeartPulse size={26} /></div>
+        <div><span className="eyebrow">แนะนำสำหรับคุณ</span><h2>คำแนะนำสำหรับการดูแลเท้า</h2><p>ทาครีมหลังล้างและซับเท้าให้แห้ง หลีกเลี่ยงการทาระหว่างซอกนิ้วเพื่อลดความอับชื้น</p></div>
+        <button className="button button-secondary" type="button" onClick={onKnowledge}>อ่านคำแนะนำ <ArrowRight size={18} /></button>
+      </section>
+      <ClinicalDisclaimer />
+    </div>
+  )
+}
+
+function FindingRow({ finding }: { finding: Finding }) {
+  return <div className="finding-row"><span className={`severity-dot severity-${severityRank[finding.severity]}`} /><div><strong>{finding.name}</strong><small>{finding.comparison}</small></div><span className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.severity}</span></div>
+}
+
+function MiniTrend({ examinations: patientExaminations }: { examinations: Examination[] }) {
+  return (
+    <div className="mini-trend" aria-label="แนวโน้มผิวแห้งดีขึ้นจากระดับรุนแรงเป็นปานกลาง">
+      {[1, 2, 3, 2].map((value, index) => { const exam = patientExaminations[Math.min(Math.max(patientExaminations.length - 1, 0), 3 - index)]; return <div className="trend-column" key={index}><span style={{ height: `${24 + value * 16}px`, opacity: exam ? 1 : .35 }} /><small>{exam?.displayDate.split(' ')[0] ?? '—'}</small></div> })}
+    </div>
+  )
+}
+
+function ClinicalDisclaimer() {
+  return <div className="disclaimer"><Info size={18} /><p><strong>ผลประเมินนี้เป็นเครื่องมือช่วยติดตาม</strong> ไม่ใช่การวินิจฉัยโรค หากมีแผล บวม แดง ร้อน หรือปวดผิดปกติ กรุณาติดต่อแพทย์</p></div>
+}
+
+function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStage, onHome, onCompleted }: { profile: Profile; diseaseRecords: Disease[]; integrations: RuntimeIntegrations | null; stage: ExamStage; setStage: (stage: ExamStage) => void; onHome: () => void; onCompleted: (exam: Examination) => void }) {
+  const [draftHint, setDraftHint] = useState(() => readExaminationDraft())
+  const [step, setStep] = useState(() => draftHint?.step ?? 0)
+  const [photos, setPhotos] = useState<Partial<Record<FootPosition, string>>>(() => draftHint?.photos ?? {})
+  const [aiFindings, setAiFindings] = useState(() => cloneFindings(mockFindings))

@@ -1,0 +1,92 @@
+function HistoryTab({ icon: Icon, label, value, active, onClick }: { icon: typeof List; label: string; value: HistoryView; active: boolean; onClick: (value: HistoryView) => void }) {
+  return <button role="tab" aria-selected={active} className={active ? 'active' : ''} type="button" onClick={() => onClick(value)}><Icon size={18} />{label}</button>
+}
+
+function HistoryList({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
+  return (
+    <div className="history-content"><div className="history-summary-bar"><span><ClipboardCheck size={19} /><strong>ตรวจแล้ว {patientExaminations.length} ครั้ง</strong></span><small>ข้อมูลตั้งแต่ {patientExaminations.at(-1)?.displayDate ?? 'ยังไม่มีข้อมูล'}</small></div>{patientExaminations.length ? <div className="exam-list">
+      {patientExaminations.map((exam, index) => { const thumbnail = exam.thumbnails?.['left-dorsal']; return <article className="exam-card" key={exam.id}><div className="exam-date-block"><strong>{exam.displayDate.split(' ')[0]}</strong><span>{exam.displayDate.split(' ').slice(1).join(' ')}</span><small>{exam.time} น.</small></div><div className={thumbnail && thumbnail !== 'demo' ? 'exam-thumb has-image' : 'exam-thumb'} role={thumbnail && thumbnail !== 'demo' ? 'img' : undefined} aria-label={thumbnail && thumbnail !== 'demo' ? 'ภาพย่อจากการตรวจ' : undefined} style={thumbnail && thumbnail !== 'demo' ? { backgroundImage: `url(${thumbnail})` } : undefined}>{!thumbnail || thumbnail === 'demo' ? <Footprints size={30} /> : null}<span>4 ภาพ</span></div><div className="exam-findings"><span className="eyebrow">{index === 0 ? 'ล่าสุด' : exam.id}</span><h2>พบ {exam.findings.length} รายการ</h2><div>{exam.findings.map((finding) => <span key={finding.diseaseId} className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.name} · {finding.severity}</span>)}</div></div><button className="exam-open" type="button" onClick={() => onSelect(exam)} aria-label={`ดูผลวันที่ ${exam.displayDate}`}>ดูรายละเอียด<ChevronRight size={19} /></button></article> })}
+    </div> : <div className="empty-state"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เริ่มตรวจเท้าครั้งแรกเพื่อดูผลย้อนหลังและแนวโน้มการเปลี่ยนแปลง</p></div>}</div>
+  )
+}
+
+function HistoryCalendar({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
+  const [cursor, setCursor] = useState({ year: 2026, month: 7 })
+  const [selectedDay, setSelectedDay] = useState(8)
+  const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate()
+  const firstDay = new Date(cursor.year, cursor.month, 1).getDay()
+  const monthPrefix = `${cursor.year}-${String(cursor.month + 1).padStart(2, '0')}`
+  const selectedDate = `${monthPrefix}-${String(selectedDay).padStart(2, '0')}`
+  const selectedExaminations = patientExaminations.filter((exam) => exam.date === selectedDate)
+  const shiftMonth = (delta: number) => setCursor((current) => { const next = new Date(current.year, current.month + delta, 1); setSelectedDay(1); return { year: next.getFullYear(), month: next.getMonth() } })
+  return (
+    <div className="calendar-layout"><section className="calendar-card"><div className="calendar-header"><button className="icon-button" type="button" aria-label="เดือนก่อน" onClick={() => shiftMonth(-1)}><ArrowLeft size={19} /></button><h2>{monthNames[cursor.month]} {cursor.year + 543}</h2><button className="icon-button" type="button" aria-label="เดือนถัดไป" onClick={() => shiftMonth(1)}><ArrowRight size={19} /></button></div><div className="weekdays">{['อา','จ','อ','พ','พฤ','ศ','ส'].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{Array.from({ length: firstDay }).map((_, index) => <span key={`empty-${index}`} />)}{Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => { const date = `${monthPrefix}-${String(day).padStart(2, '0')}`; const examsOnDay = patientExaminations.filter((item) => item.date === date); return <button key={day} type="button" aria-label={`เลือกวันที่ ${day} ${monthNames[cursor.month]} ${cursor.year + 543}`} className={`${examsOnDay.length ? 'has-exam ' : ''}${selectedDay === day ? 'selected' : ''}`} onClick={() => setSelectedDay(day)}>{day}{examsOnDay.length ? <i /> : null}</button> })}</div></section><section className="calendar-side"><span className="eyebrow">วันที่เลือก</span><h2>{selectedDay} {monthNames[cursor.month]} {cursor.year + 543}</h2>{selectedExaminations.length ? selectedExaminations.map((exam) => <div className="calendar-event" key={exam.id}><span><Check size={16} /></span><div><strong>ตรวจเท้า เวลา {exam.time} น.</strong><p>พบ {exam.findings.map((finding) => finding.name).join(' และ ') || 'ไม่พบภาวะตามเกณฑ์'}</p><button type="button" onClick={() => onSelect(exam)}>ดูผลตรวจ <ChevronRight size={16} /></button></div></div>) : <div className="calendar-empty"><CalendarDays size={22} /><p>ไม่มีรายการตรวจในวันนี้</p></div>}</section></div>
+  )
+}
+
+function HistoryInsight({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
+  const latest = patientExaminations[0]
+  const previous = patientExaminations[1]
+  const trackedFinding = latest?.findings[0]
+  const previousFinding = trackedFinding ? previous?.findings.find((finding) => finding.diseaseId === trackedFinding.diseaseId) : undefined
+  const severityDelta = trackedFinding && previousFinding ? severityRank[trackedFinding.severity] - severityRank[previousFinding.severity] : 0
+  const trendLabel = severityDelta < 0 ? 'แนวโน้มดีขึ้น' : severityDelta > 0 ? 'ควรติดตาม' : 'คงที่'
+  const trendStatus = severityDelta < 0 ? 'success' : severityDelta > 0 ? 'danger' : 'attention'
+  const trendIcon = severityDelta < 0 ? <TrendingDown size={30} /> : severityDelta > 0 ? <TrendingUp size={30} /> : <Clock3 size={30} />
+  const recurringCount = trackedFinding ? patientExaminations.filter((exam) => exam.findings.some((finding) => finding.diseaseId === trackedFinding.diseaseId)).length : 0
+  const trendRecords = patientExaminations.slice(0, 4).reverse()
+  return (
+    <div className="insight-grid"><section className="insight-hero"><div><span className="eyebrow">ภาพรวมจาก {patientExaminations.length} ครั้งล่าสุด</span><h2>{trendLabel}</h2><p>{trackedFinding ? `${trackedFinding.name} ${severityDelta < 0 ? 'ลดระดับจากครั้งก่อน' : severityDelta > 0 ? 'มีระดับสูงขึ้นจากครั้งก่อน' : 'ยังอยู่ในระดับเดิม'}${previous ? '' : ' · รอข้อมูลครั้งถัดไปเพื่อเปรียบเทียบ'}` : 'ยังไม่มีผลตรวจสำหรับวิเคราะห์แนวโน้ม'}</p></div><span className="big-trend">{trendIcon}</span></section><div className="stat-row"><div className="stat-card"><span>ตรวจทั้งหมด</span><strong>{patientExaminations.length} <small>ครั้ง</small></strong></div><div className="stat-card"><span>ตรวจล่าสุด</span><strong>{latest?.displayDate.split(' ')[0] ?? '—'}</strong></div><div className="stat-card"><span>พบต่อเนื่อง</span><strong>{recurringCount} <small>ครั้ง</small></strong></div></div><section className="trend-card"><div className="section-heading"><div><span className="eyebrow">ระดับความรุนแรง</span><h2>{trackedFinding?.name ?? 'ยังไม่มีข้อมูล'}</h2></div><span className={`status-pill ${trendStatus}`}>{severityDelta < 0 ? <TrendingDown size={15} /> : severityDelta > 0 ? <TrendingUp size={15} /> : <Clock3 size={15} />}{trendLabel.replace('แนวโน้ม', '')}</span></div><div className="severity-chart">{trendRecords.map((exam) => { const finding = trackedFinding ? exam.findings.find((item) => item.diseaseId === trackedFinding.diseaseId) : undefined; const value = finding ? severityRank[finding.severity] : 0; return <div key={exam.id}><span className={`bar severity-bg-${value || 1}`} style={{ height: `${Math.max(18, value * 46)}px`, opacity: value ? 1 : .35 }}><i>{finding?.severity ?? 'ไม่มีข้อมูล'}</i></span><small>{exam.displayDate.split(' ')[0]} {exam.displayDate.split(' ')[1] ?? ''}</small></div> })}</div></section><section className="insight-list"><h2>สิ่งที่ควรรู้</h2>{trackedFinding ? <button type="button" onClick={() => latest && onSelect(latest)}><span className={`insight-bullet ${severityDelta < 0 ? 'good' : 'attention'}`}>{severityDelta < 0 ? <TrendingDown size={18} /> : <Clock3 size={18} />}</span><div><strong>{trackedFinding.name} {severityDelta < 0 ? 'ดีขึ้น' : severityDelta > 0 ? 'ควรติดตาม' : 'ยังคงที่'}</strong><p>{previousFinding ? `ระดับ${previousFinding.severity} → ${trackedFinding.severity}` : 'มีข้อมูลจากการตรวจครั้งล่าสุด'}</p></div><ChevronRight size={18} /></button> : <div className="calendar-empty"><Clock3 size={22} /><p>ตรวจอย่างน้อยหนึ่งครั้งเพื่อเริ่มดูแนวโน้ม</p></div>}{previous && trackedFinding ? <button type="button" onClick={() => onSelect(previous)}><span className="insight-bullet attention"><History size={18} /></span><div><strong>ดูผลครั้งก่อน</strong><p>{previous.displayDate} · {previous.findings.length} รายการ</p></div><ChevronRight size={18} /></button> : null}</section></div>
+  )
+}
+
+function ExaminationDetail({ exam, diseaseRecords = diseases, onClose }: { exam: Examination; diseaseRecords?: Disease[]; onClose: () => void }) {
+  const recommendationLines = [...new Set(exam.findings.flatMap((finding) => { const disease = diseaseRecords.find((item) => item.id === finding.diseaseId); return disease ? [disease.care, disease.recommendation].filter(Boolean) : [] }))].slice(0, 2)
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><header><div><span className="eyebrow">{exam.id}</span><h2 id="detail-title">ผลตรวจวันที่ {exam.displayDate}</h2><p>{exam.time} น. · ภาพครบ 4 มุม</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><div className="detail-photo-row">{footSteps.map((step) => { const photo = exam.thumbnails?.[step.id]; return <div key={step.id} className={photo ? 'has-thumbnail' : ''} style={photo ? { backgroundImage: `url(${photo})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>{!photo ? <Footprints size={28} /> : null}<span>{step.short}</span></div> })}</div><section><h3>ภาวะที่พบ</h3><div className="finding-list">{exam.findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />)}</div></section><section className="modal-recommendation"><HeartPulse size={22} /><div><h3>คำแนะนำ</h3>{(recommendationLines.length ? recommendationLines : ['ตรวจเท้าทุกวัน และติดต่อแพทย์หากมีอาการผิดปกติ']).map((line) => <p key={line}>{line}</p>)}</div></section><button className="button button-primary" type="button" onClick={onClose}>ปิดรายละเอียด</button></section></div>
+}
+
+function KnowledgePage({ articles, diseaseRecords, showToast }: { articles: KnowledgeArticle[]; diseaseRecords: Disease[]; showToast: (text: string) => void }) {
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('ทั้งหมด')
+  const [diseaseFilter, setDiseaseFilter] = useState('ทั้งหมด')
+  const [severityFilter, setSeverityFilter] = useState('ทั้งหมด')
+  const [selected, setSelected] = useState<KnowledgeArticle | null>(null)
+  const categories = ['ทั้งหมด', ...new Set(articles.map((article) => article.category))]
+  const diseaseOptions = ['ทั้งหมด', ...diseaseRecords.map((disease) => disease.id)]
+  const severityOptions = ['ทั้งหมด', 'ทุกระดับ', 'เล็กน้อย', 'ปานกลาง', 'รุนแรง'] as const
+  const filtered = useMemo(() => articles.filter((article) => (category === 'ทั้งหมด' || article.category === category) && (diseaseFilter === 'ทั้งหมด' || article.diseaseId === diseaseFilter) && (severityFilter === 'ทั้งหมด' || article.severity === severityFilter) && `${article.title} ${article.summary} ${article.diseaseId ?? ''}`.toLowerCase().includes(query.toLowerCase())), [articles, query, category, diseaseFilter, severityFilter])
+  return (
+    <div className="page knowledge-page"><PageTitle eyebrow="ความรู้จากทีมแพทย์" title="คลังความรู้ดูแลเท้า" description="คำแนะนำที่อ่านง่ายและผ่านการจัดทำโดยทีมดูแล" /><div className="knowledge-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหา เช่น ผิวแห้ง หนังด้าน" aria-label="ค้นหาคลังความรู้" /></label><div className="category-chips" aria-label="กรองตามหมวดหมู่">{categories.map((item) => <button className={category === item ? 'active' : ''} type="button" key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="knowledge-filter-row"><label><span>ภาวะ</span><select aria-label="กรองตามภาวะ" value={diseaseFilter} onChange={(event) => setDiseaseFilter(event.target.value)}>{diseaseOptions.map((id) => <option value={id} key={id}>{id === 'ทั้งหมด' ? id : `${id} · ${diseaseRecords.find((disease) => disease.id === id)?.name ?? id}`}</option>)}</select></label><label><span>ระดับความรุนแรง</span><select aria-label="กรองตามระดับความรุนแรง" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>{severityOptions.map((severity) => <option value={severity} key={severity}>{severity}</option>)}</select></label></div></div>{filtered.length ? <div className="article-grid">{filtered.map((article, index) => <article className={`article-card tone-${article.tone}`} key={article.id}><div className="article-visual">{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={30} />}<span>{index + 1}</span></div><div className="article-body"><div><span className="category-label">{article.category}</span><span>{article.severity} · {article.readTime}</span></div><h2>{article.title}</h2><p>{article.summary}</p><button className="card-link" type="button" onClick={() => setSelected(article)}>อ่านคำแนะนำ <ChevronRight size={18} /> </button></div></article>)}</div> : <div className="empty-state"><Search size={32} /><h2>ยังไม่พบหัวข้อนี้</h2><p>ลองค้นด้วยคำที่สั้นลง หรือเลือก “ทั้งหมด” เพื่อดูคำแนะนำที่มี</p><button className="button button-secondary" type="button" onClick={() => { setQuery(''); setCategory('ทั้งหมด'); setDiseaseFilter('ทั้งหมด'); setSeverityFilter('ทั้งหมด') }}>ดูบทความทั้งหมด</button></div>}{selected ? <ArticleModal article={selected} onClose={() => setSelected(null)} onSaved={() => { showToast('บันทึกไว้อ่านภายหลังแล้ว'); setSelected(null) }} /> : null}</div>
+  )
+}
+
+function ArticleModal({ article, onClose, onSaved }: { article: KnowledgeArticle; onClose: () => void; onSaved: () => void }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><article className="detail-modal article-modal" role="dialog" aria-modal="true" aria-labelledby="article-title"><header><div><span className="eyebrow">{article.category} · {article.severity} · {article.readTime}</span><h2 id="article-title">{article.title}</h2></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><div className={`article-hero tone-${article.tone}`}>{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={44} />}</div><p className="article-intro">{article.summary}</p><h3>ทำตาม 3 ขั้นตอนนี้</h3><ol className="care-steps">{article.care.map((step, index) => <li key={step}><span>{index + 1}</span>{step}</li>)}</ol>{article.treatment ? <section className="article-guidance"><h3>การรักษา</h3><p>{article.treatment}</p></section> : null}{article.recommendation ? <section className="article-guidance"><h3>คำแนะนำเพิ่มเติม</h3><p>{article.recommendation}</p></section> : null}<div className="review-explainer"><Info size={19} /><p>คำแนะนำทั่วไปอาจไม่เหมาะกับทุกคน หากมีอาการผิดปกติควรปรึกษาแพทย์</p></div><button className="button button-primary" type="button" onClick={onSaved}>บันทึกไว้อ่านภายหลัง</button></article></div>
+}
+
+function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { page: Page; setPage: (page: Page) => void; showToast: (text: string) => void; adminService?: AdminService; auditLogger?: AuditLogger }) {
+  const [userRecords, setUserRecords] = useState<UserRecord[]>(() => adminService ? [] : seededUsers)
+  const [diseaseRecords, setDiseaseRecords] = useState<Disease[]>(() => adminService ? [] : diseases)
+  const [knowledgeRecords, setKnowledgeRecords] = useState<KnowledgeArticle[]>(() => adminService ? [] : knowledgeArticles)
+
+  useEffect(() => {
+    if (!adminService) return
+    let cancelled = false
+    void Promise.all([adminService.listUsers(), adminService.listDiseases(), adminService.listKnowledge()]).then(([users, diseaseList, articles]) => {
+      if (cancelled) return
+      setUserRecords(users)
+      setDiseaseRecords(diseaseList)
+      setKnowledgeRecords(articles)
+    }).catch(() => {
+      if (!cancelled) showToast('โหลดข้อมูล Doctor workspace ไม่สำเร็จ กรุณาลองใหม่')
+    })
+    return () => { cancelled = true }
+  }, [adminService, showToast])
+
+  if (page === 'users') return <UserManagement users={userRecords} diseaseRecords={diseaseRecords} setUsers={setUserRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} />
+  if (page === 'diseases') return <DiseaseManagement diseases={diseaseRecords} setDiseases={setDiseaseRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} />
+  if (page === 'admin-knowledge') return <KnowledgeManagement articles={knowledgeRecords} diseaseRecords={diseaseRecords} setArticles={setKnowledgeRecords} showToast={showToast} adminService={adminService} />
+  return <DoctorHome onNavigate={setPage} showToast={showToast} users={userRecords} diseaseRecords={diseaseRecords} adminService={adminService} />
+}
+
