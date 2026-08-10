@@ -38,7 +38,7 @@ function normalizeCreateInput(body) {
   const name = String(body.name || '').trim()
   const dateOfBirth = String(body.dateOfBirth || '').trim()
   const occupation = String(body.occupation || '').trim()
-  const status = body.status === 'inactive' ? 'inactive' : body.status === 'active' ? 'active' : ''
+  const status = ['pending', 'inactive', 'active'].includes(body.status) ? body.status : ''
   const pin = String(body.pin || '')
   if (!USERNAME_PATTERN.test(username)) throw badRequest('Username ต้องมี 3-32 ตัวอักษร และใช้ A-Z, 0-9, _ หรือ - เท่านั้น')
   if (!name || name.length > 160) throw badRequest('กรุณาระบุชื่อ-นามสกุล')
@@ -84,13 +84,15 @@ async function deleteAuthUser(userId) {
 }
 
 async function listUsers() {
-  const [profiles, examinations] = await Promise.all([
+  const [profiles, examinations, roles] = await Promise.all([
     supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
     supabaseRest('/rest/v1/examinations?select=user_id,examined_at,created_at&order=created_at.desc'),
+    supabaseRest('/rest/v1/user_roles?select=user_id,role'),
   ])
+  const userIds = new Set(roles.filter((item) => item.role === 'user' || item.role === 'patient').map((item) => item.user_id))
   const latestByUser = new Map()
   for (const row of examinations) if (!latestByUser.has(row.user_id)) latestByUser.set(row.user_id, row.examined_at || row.created_at)
-  return profiles.map((profile) => toUserRecord(profile, latestByUser.get(profile.user_id)))
+  return profiles.filter((profile) => userIds.has(profile.user_id)).map((profile) => toUserRecord(profile, latestByUser.get(profile.user_id)))
 }
 
 async function createUser(body) {
@@ -116,7 +118,7 @@ async function createUser(body) {
     })
     await supabaseRest('/rest/v1/user_roles', {
       method: 'POST',
-      body: JSON.stringify({ user_id: authUser.id, role: 'patient' }),
+      body: JSON.stringify({ user_id: authUser.id, role: 'user' }),
     })
     return toUserRecord(profiles[0])
   } catch (error) {
