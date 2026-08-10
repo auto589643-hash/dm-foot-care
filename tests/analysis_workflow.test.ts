@@ -58,6 +58,34 @@ assert.deepEqual(uploadedOnRetry.sort(), ['right-dorsal', 'right-sole'])
 assert.equal(createdFolders, 0)
 assert.equal(receivedIdempotencyKey, 'EX3-retry-2')
 
+let releaseUpload!: () => void
+const uploadGate = new Promise<void>((resolve) => { releaseUpload = resolve })
+let providerStartedBeforeUpload = false
+let uploadFinished = false
+const parallelArchive: OriginalImageArchive = {
+  async createPrivateExaminationFolder() { return 'parallel-folder' },
+  async uploadOriginal(_folderId, position) {
+    await uploadGate
+    uploadFinished = true
+    return `parallel-${position}`
+  },
+}
+const parallelProvider: FootAssessmentProvider = {
+  async analyze(input) {
+    providerStartedBeforeUpload = !uploadFinished && Boolean(input.analysisImages)
+    return new MockFootAssessmentProvider().analyze(input)
+  },
+}
+const parallelRun = runAnalysisWorkflow({
+  examinationId: 'EX-PARALLEL', username: 'DM001', images, diseaseMasterVersion: '1',
+  archive: parallelArchive, provider: parallelProvider, repository,
+  analysisImages: Object.fromEntries(positions.map((position) => [position, 'data:image/jpeg;base64,YQ=='])),
+})
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(providerStartedBeforeUpload, true)
+releaseUpload()
+await parallelRun
+
 const failureStatuses: string[] = []
 const failingProvider: FootAssessmentProvider = { async analyze() { throw new Error('provider down') } }
 await assert.rejects(() => runAnalysisWorkflow({
