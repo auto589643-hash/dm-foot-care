@@ -13,6 +13,8 @@ export interface FinalizeExaminationInput {
   auditLogger?: AuditLogger
   actorId?: string | null
   reviewChangedCount?: number
+  /** Thumbnails may already have been generated while Gemini was running. */
+  precomputedThumbnails?: Record<FootPosition, string>
 }
 
 export class FinalizePipelineError extends Error {
@@ -29,7 +31,7 @@ export class FinalizePipelineError extends Error {
 
 /** Generate web-only thumbnails after the final clinical result is confirmed. */
 export async function finalizeExamination(input: FinalizeExaminationInput): Promise<Record<FootPosition, string>> {
-  const { examinationId, images, thumbnailService, repository, confirmedFindings = [], confirmedBy, auditLogger, actorId, reviewChangedCount = 0 } = input
+  const { examinationId, images, thumbnailService, repository, confirmedFindings = [], confirmedBy, auditLogger, actorId, reviewChangedCount = 0, precomputedThumbnails } = input
   try {
     await repository.updateStatus(examinationId, 'thumbnailing')
     if (confirmedBy) {
@@ -40,7 +42,7 @@ export async function finalizeExamination(input: FinalizeExaminationInput): Prom
         confirmedBy,
       })))
     }
-    const thumbnails = await thumbnailService.generateAndStore(examinationId, images)
+    const thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
     await repository.saveThumbnailReferences({ examinationId, thumbnails })
     if (auditLogger && reviewChangedCount > 0) {
       await auditLogger.append({ actorId: actorId ?? null, eventType: 'human_review_edited', entityType: 'finding', entityId: examinationId, payload: { changedCount: reviewChangedCount } })

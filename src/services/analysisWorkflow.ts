@@ -16,6 +16,8 @@ export interface AnalysisWorkflowInput {
   idempotencyKey?: string
   auditLogger?: AuditLogger
   actorId?: string | null
+  /** Browser-compressed images let Gemini run in parallel with Drive uploads. */
+  analysisImages?: Partial<Record<FootPosition, string>> | Promise<Partial<Record<FootPosition, string>>>
   existingImageReferences?: {
     driveFolderId: string | null
     driveFileIds: Partial<Record<FootPosition, string>>
@@ -51,32 +53,45 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
   const idempotencyKey = input.idempotencyKey ?? `${examinationId}:${diseaseMasterVersion}`
   try {
     await repository.updateStatus(examinationId, 'uploading')
-    const existing = input.existingImageReferences ?? await repository.getImageReferences(examinationId)
-    const driveFolderId = existing.driveFolderId ?? await archive.createPrivateExaminationFolder(username, examinationId, examinedAt)
-    const missingPositions = examinationPositions.filter((position) => !existing.driveFileIds[position])
-    const uploaded = await Promise.all(missingPositions.map(async (position) => {
-      const image = images[position]
-      if (!image) throw new Error(`Missing image for ${position}`)
-      const driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
-      await repository.saveImageReference({
-        examinationId,
-        position,
-        driveFolderId,
-        driveFileId,
-        metadata: { contentType: image.type, size: image.size },
-      })
-      await appendAudit(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position })
-      return [position, driveFileId] as const
-    }))
-
-    const imageReferences = { ...existing.driveFileIds, ...Object.fromEntries(uploaded) } as Record<FootPosition, string>
-    const missingAfterUpload = examinationPositions.filter((position) => !imageReferences[position])
-    if (missingAfterUpload.length > 0) throw new Error(`Missing image references: ${missingAfterUpload.join(', ')}`)
     await repository.updateStatus(examinationId, 'analyzing')
-    await appendAudit(input, 'ai_analysis_started', 'ai_analysis', examinationId, { idempotencyKey, diseaseMasterVersion })
-    const analysis = await provider.analyze({ examinationId, idempotencyKey, imageReferences, diseaseMasterVersion })
-    await appendAudit(input, 'ai_analysis_completed', 'ai_analysis', analysis.runId, { findingCount: analysis.findings.length })
-    await repository.saveAiAnalysis({
+
+    const uploadTask = (async () => {
+      const existing = input.existingImageReferences ?? await repository.getImageReferences(examinationId)
+      const driveFolderId = existing.driveFolderId ?? await archive.createPrivateExaminationFolder(username, examinationId, examinedAt)
+      const missingPositions = examinationPositions.filter((position) => !existing.driveFileIds[position])
+      const uploaded = await Promise.all(missingPositions.map(async (position) => {
+        const image = images[position]
+        if (!image) throw new Error(`Missing image for ${position}`)
+        const driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
+        await Promise.all([
+          repository.saveImageReference({
+            examinationId,
+            position,
+            driveFolderId,
+            driveFileId,
+            metadata: { contentType: image.type, size: image.size },
+          }),
+          appendAuditSafely(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position }),
+        ])
+        return [position, driveFileId] as const
+      }))
+      const imageReferences = { ...existing.driveFileIds, ...Object.fromEntries(uploaded) } as Record<FootPosition, string>
+      const missingAfterUpload = examinationPositions.filter((position) => !imageReferences[position])
+      if (missingAfterUpload.length > 0) throw new Error(`Missing image references: ${missingAfterUpload.join(', ')}`)
+      return { driveFolderId, imageReferences }
+    })()
+
+    const analysisTask = (async () => {
+      const analysisImages = await input.analysisImages
+      const fallbackReferences = analysisImages ? {} : (await uploadTask).imageReferences
+      await appendAuditSafely(input, 'ai_analysis_started', 'ai_analysis', examinationId, { idempotencyKey, diseaseMasterVersion })
+      return provider.analyze({ examinationId, idempotencyKey, imageReferences: fallbackReferences, analysisImages, diseaseMasterVersion })
+    })()
+
+    const [{ driveFolderId, imageReferences }, analysis] = await Promise.all([uploadTask, analysisTask])
+    await Promise.all([
+      appendAuditSafely(input, 'ai_analysis_completed', 'ai_analysis', analysis.runId, { findingCount: analysis.findings.length }),
+      repository.saveAiAnalysis({
       examinationId,
       idempotencyKey,
       provider: 'provider-adapter',
@@ -84,8 +99,9 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
       diseaseMasterRevision: Number.parseInt(diseaseMasterVersion, 10) || 1,
       rawResult: analysis.rawResult,
       validation: analysis.validation,
-    })
-    await appendAudit(input, 'ai_result_recorded', 'ai_analysis', analysis.runId, { validationStatus: analysis.validation.status })
+      }),
+    ])
+    await appendAuditSafely(input, 'ai_result_recorded', 'ai_analysis', analysis.runId, { validationStatus: analysis.validation.status })
     await repository.updateStatus(examinationId, 'awaiting_review')
 
     return { examinationId, driveFolderId, driveFileIds: imageReferences, runId: analysis.runId, findings: analysis.findings }
@@ -102,4 +118,12 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
 
 async function appendAudit(input: AnalysisWorkflowInput, eventType: 'image_uploaded' | 'ai_analysis_started' | 'ai_analysis_completed' | 'ai_result_recorded', entityType: 'image' | 'ai_analysis', entityId: string, payload: Record<string, unknown>): Promise<void> {
   await input.auditLogger?.append({ actorId: input.actorId ?? null, eventType, entityType, entityId, payload })
+}
+
+async function appendAuditSafely(input: AnalysisWorkflowInput, eventType: 'image_uploaded' | 'ai_analysis_started' | 'ai_analysis_completed' | 'ai_result_recorded', entityType: 'image' | 'ai_analysis', entityId: string, payload: Record<string, unknown>): Promise<void> {
+  try {
+    await appendAudit(input, eventType, entityType, entityId, payload)
+  } catch (error) {
+    console.warn('Audit event could not be recorded', eventType, error)
+  }
 }
