@@ -601,6 +601,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     setAnalysisError('')
     setProcessStep(0)
     setStage('processing')
+    void ensureExaminationDraft()
   }
 
   useLayoutEffect(() => {
@@ -631,7 +632,8 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     ]
     const provider: FootAssessmentProvider = integrations?.provider ?? new MockFootAssessmentProvider(toMockDiseaseMaster(diseaseRecords))
     const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
-    void Promise.all([ensureExaminationDraft(), photosToBlobs(capturedPhotos)]).then(([draftReady, images]) => {
+    const draftReadyJob = examinationIdRef.current ? Promise.resolve(true) : (draftJobRef.current ?? Promise.resolve(false))
+    void Promise.all([draftReadyJob, photosToBlobs(capturedPhotos)]).then(([draftReady, images]) => {
       if (!draftReady) throw new Error('Could not initialize examination draft')
       if (!thumbnailJobRef.current) {
         const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
@@ -723,7 +725,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
   if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
   if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
-  if (stage === 'processing') return <ProcessingScreen current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
+  if (stage === 'processing') return <ProcessingScreen key={analysisAttempt} current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
   if (stage === 'human-review') return <HumanReview photos={photos} diseaseRecords={diseaseRecords} aiFindings={aiFindings} confirmedFindings={confirmedFindings} setConfirmedFindings={setConfirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
   return completedExam ? <SummaryReport examination={completedExam} photos={thumbnails} diseaseRecords={diseaseRecords} onHome={onHome} onRestart={reset} /> : null
 }
@@ -958,12 +960,15 @@ function ProcessingScreen({ current, error, onRetry }: { current: number; error:
     return () => window.removeEventListener('online', handleOnline)
   }, [])
   const targetProgress = Math.min(92, 18 + current * 25)
-  const [analysisProgress, setAnalysisProgress] = useState(targetProgress)
+  const [driftProgress, setDriftProgress] = useState(18)
+  const analysisProgress = Math.max(targetProgress, driftProgress)
   useEffect(() => {
-    setAnalysisProgress((value) => Math.max(value, targetProgress))
     if (error || !online) return
     const timer = window.setInterval(() => {
-      setAnalysisProgress((value) => Math.min(94, value + (value < 70 ? 3 : value < 88 ? 2 : 1)))
+      setDriftProgress((value) => {
+        const currentProgress = Math.max(value, targetProgress)
+        return Math.min(94, currentProgress + (currentProgress < 70 ? 3 : currentProgress < 88 ? 2 : 1))
+      })
     }, 480)
     return () => window.clearInterval(timer)
   }, [error, online, targetProgress])
