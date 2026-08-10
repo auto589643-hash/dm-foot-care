@@ -8,7 +8,7 @@ export const patientProfile: Profile = {
   age: 62,
   generation: 'Baby Boomer',
   occupation: 'เกษตรกร',
-  role: 'patient',
+  role: 'user',
 }
 
 export const doctorProfile: Profile = {
@@ -19,7 +19,7 @@ export const doctorProfile: Profile = {
   age: 45,
   generation: 'Gen X',
   occupation: 'แพทย์',
-  role: 'doctor',
+  role: 'admin',
 }
 
 export const footSteps = [
