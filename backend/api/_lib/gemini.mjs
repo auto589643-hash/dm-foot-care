@@ -12,6 +12,7 @@ function parseJsonText(value) {
 
 export async function callGemini({ images, diseaseMaster }) {
   const apiKey = process.env.GEMINI_API_KEY
+  // Gemini 2.5 Flash is no longer available to new API users.
   const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured')
   if (!Array.isArray(images) || images.length === 0) throw new Error('At least one image is required for the Gemini smoke path')
@@ -35,6 +36,7 @@ export async function callGemini({ images, diseaseMaster }) {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
+    signal: AbortSignal.timeout(90_000),
     body: JSON.stringify({
       contents: [{ role: 'user', parts }],
       generationConfig: {
@@ -69,4 +71,3 @@ export async function callGemini({ images, diseaseMaster }) {
   if (!text) throw new Error('Gemini returned an empty response')
   return { rawResult: parseJsonText(text), model }
 }
-
