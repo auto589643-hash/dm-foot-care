@@ -1,6 +1,6 @@
 import { handleOptions, readJsonBody, sendJson } from '../../../_lib/http.mjs'
 import { setCors } from '../../../_lib/http.mjs'
-import { signInWithUsername } from '../../../_lib/supabase.mjs'
+import { setRefreshCookie, signInWithUsername } from '../../../_lib/supabase.mjs'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
@@ -15,7 +15,10 @@ export default async function handler(req, res) {
     }
     const session = await signInWithUsername(username, pin)
     if (!session) return sendJson(res, 401, { message: 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง หรือบัญชีไม่ได้เปิดใช้งาน' })
-    return sendJson(res, 200, session)
+    setRefreshCookie(res, session.refreshToken)
+    const { refreshToken: _refreshToken, ...clientSession } = session
+    void _refreshToken
+    return sendJson(res, 200, clientSession)
   } catch (error) {
     console.error('sign-in failed', error)
     return sendJson(res, 500, { message: 'ระบบเข้าสู่ระบบขัดข้องชั่วคราว' })

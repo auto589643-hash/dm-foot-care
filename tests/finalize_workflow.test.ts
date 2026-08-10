@@ -35,6 +35,17 @@ assert.deepEqual(statuses, ['thumbnailing', 'confirmed'])
 assert.deepEqual(saved.sort(), positions.sort())
 assert.deepEqual(confirmed, ['D001:doctor-1'])
 
+let generatedPrecomputedThumbnail = false
+const precomputed = Object.fromEntries(positions.map((position) => [position, `ready/${position}.webp`])) as Record<FootPosition, string>
+const precomputedResult = await finalizeExamination({
+  examinationId: 'EX-PRECOMPUTED', images,
+  thumbnailService: { async generateAndStore() { generatedPrecomputedThumbnail = true; return precomputed } },
+  repository,
+  precomputedThumbnails: precomputed,
+})
+assert.equal(generatedPrecomputedThumbnail, false)
+assert.deepEqual(precomputedResult, precomputed)
+
 const failureStatuses: string[] = []
 await assert.rejects(() => finalizeExamination({
   examinationId: 'EX2', images,

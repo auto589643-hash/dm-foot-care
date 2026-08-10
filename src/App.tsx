@@ -39,6 +39,7 @@ import {
   Type,
   UserRound,
   VideoOff,
+  SwitchCamera,
   Users,
   WifiOff,
   X,
@@ -53,6 +54,7 @@ import { BrowserThumbnailService, InMemoryExaminationRepository, InMemoryOrigina
 import { calculateAge, calculateGeneration, withDerivedProfile } from './services/profileMetrics'
 import { evaluateImageQuality, type ImageQualityResult } from './services/imageQuality'
 import { createRuntimeIntegrationState, type RuntimeIntegrations } from './services/runtimeIntegrations'
+import { createAnalysisImages } from './services/thumbnailService'
 import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, OriginalImageArchive, ThumbnailService } from './services/contracts'
 import type { Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, Role, Severity, UserRecord } from './types'
 
@@ -101,8 +103,8 @@ const mockFindings: Finding[] = [
 ]
 
 const demoAccounts: Record<string, { pin: string; role: Role }> = {
-  DM001: { pin: '1234', role: 'patient' },
-  DMDR01: { pin: '1234', role: 'doctor' },
+  DM001: { pin: '1234', role: 'user' },
+  ADMIN: { pin: '1234', role: 'admin' },
 }
 
 function cloneFindings(findings: Finding[]): Finding[] {
@@ -127,9 +129,9 @@ function App() {
   const [profile, setProfile] = useState<Profile | null>(() => {
     if (integrations) return null
     const savedRole = window.localStorage.getItem('dmfc-demo-role') as Role | null
-    return savedRole === 'doctor' ? withDerivedProfile(doctorProfile) : savedRole === 'patient' ? withDerivedProfile(patientProfile) : null
+    return savedRole === 'admin' ? withDerivedProfile(doctorProfile) : savedRole === 'user' ? withDerivedProfile(patientProfile) : null
   })
-  const [page, setPage] = useState<Page>(profile?.role === 'doctor' ? 'admin-home' : 'home')
+  const [page, setPage] = useState<Page>(profile?.role === 'admin' ? 'admin-home' : 'home')
   const [restoring, setRestoring] = useState(Boolean(integrations))
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileDialog, setProfileDialog] = useState<'profile' | 'accessibility' | null>(null)
@@ -166,8 +168,8 @@ function App() {
       if (cancelled || !restored) return
       const nextProfile = withDerivedProfile(restored)
       setProfile(nextProfile)
-      setPage(nextProfile.role === 'doctor' ? 'admin-home' : 'home')
-      if (nextProfile.role === 'patient') {
+      setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
+      if (nextProfile.role === 'user') {
         void loadPatientExaminations()
         void loadPatientKnowledge()
       }
@@ -189,9 +191,9 @@ function App() {
     const nextProfile = withDerivedProfile(authenticatedProfile)
     if (!integrations) window.localStorage.setItem('dmfc-demo-role', nextProfile.role)
     setProfile(nextProfile)
-    setPage(nextProfile.role === 'doctor' ? 'admin-home' : 'home')
+    setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
     void integrations?.audit.append({ actorId: nextProfile.id, eventType: 'login', entityType: 'session', entityId: nextProfile.id, payload: { role: nextProfile.role } }).catch(() => {})
-    if (nextProfile.role === 'patient') {
+    if (nextProfile.role === 'user') {
       void loadPatientExaminations()
       void loadPatientKnowledge()
     }
@@ -225,7 +227,7 @@ function App() {
   if (restoring) return <main className="login-page"><section className="login-panel"><div className="login-form-wrap"><span className="eyebrow">DM Foot Care</span><h2>กำลังตรวจสอบ session</h2><p>กรุณารอสักครู่…</p></div></section></main>
   if (!profile) return <LoginScreen onLogin={login} authService={integrations?.auth} />
 
-  const navItems = profile.role === 'doctor' ? doctorNav : patientNav
+  const navItems = profile.role === 'admin' ? doctorNav : patientNav
 
   return (
     <div className="app-shell">
@@ -241,7 +243,7 @@ function App() {
           onAccessibility={() => { setProfileDialog('accessibility'); setProfileOpen(false) }}
         />
         <main id="main-content" className="main-content">
-          {profile.role === 'patient' ? (
+          {profile.role === 'user' ? (
               <PatientPages
               profile={profile}
               page={page}
@@ -268,8 +270,11 @@ function App() {
 }
 
 function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => void; authService?: AuthService }) {
-  const [username, setUsername] = useState('DM001')
-  const [pin, setPin] = useState('1234')
+  const [username, setUsername] = useState(authService ? '' : 'DM001')
+  const [pin, setPin] = useState(authService ? '' : '1234')
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [registration, setRegistration] = useState({ username: '', displayName: '', dateOfBirth: '', occupation: '', pin: '', confirmPin: '' })
+  const [registrationComplete, setRegistrationComplete] = useState(false)
   const [showDemo, setShowDemo] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -300,17 +305,49 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
       return
     }
     window.setTimeout(() => {
-      onLogin(withDerivedProfile(account.role === 'doctor' ? doctorProfile : patientProfile))
+      onLogin(withDerivedProfile(account.role === 'admin' ? doctorProfile : patientProfile))
       setSubmitting(false)
     }, 550)
   }
 
   const fillDemo = (role: Role) => {
-    setUsername(role === 'doctor' ? 'DMDR01' : 'DM001')
+    setUsername(role === 'admin' ? 'ADMIN' : 'DM001')
     setPin('1234')
     setShowDemo(false)
     setError('')
   }
+
+  const handleRegister = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    if (!authService) return
+    const normalizedUsername = registration.username.trim().toUpperCase()
+    if (!normalizedUsername || !registration.displayName.trim() || !registration.dateOfBirth || !registration.occupation.trim()) {
+      setError('กรุณากรอกข้อมูลลงทะเบียนให้ครบทุกช่อง')
+      return
+    }
+    if (!/^\d{4}$/.test(registration.pin) || registration.pin !== registration.confirmPin) {
+      setError('กรุณากรอก PIN 4 หลักให้ตรงกันทั้งสองช่อง')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await authService.register({
+        username: normalizedUsername,
+        displayName: registration.displayName.trim(),
+        dateOfBirth: registration.dateOfBirth,
+        occupation: registration.occupation.trim(),
+        pin: registration.pin,
+      })
+      setRegistrationComplete(true)
+    } catch (registerError) {
+      setError(registerError instanceof Error ? registerError.message : 'ลงทะเบียนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const updateRegistration = (key: keyof typeof registration, value: string) => setRegistration((current) => ({ ...current, [key]: value }))
 
   return (
     <main className="login-page">
@@ -328,10 +365,10 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
       <section className="login-panel">
         <div className="mobile-login-brand brand"><BrandMark /><span>DM Foot Care</span></div>
         <div className="login-form-wrap">
-          <div className="login-heading">
+          {mode === 'login' ? <><div className="login-heading">
             <span className="eyebrow">ยินดีต้อนรับ</span>
             <h2>เข้าสู่ระบบ</h2>
-            <p>กรอกชื่อผู้ใช้และ PIN ที่ได้รับจากคุณหมอ</p>
+            <p>กรอกชื่อผู้ใช้และ PIN ของคุณ</p>
           </div>
           <form onSubmit={handleLogin} noValidate>
             <label className="field-label" htmlFor="username">ชื่อผู้ใช้</label>
@@ -341,16 +378,17 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
             {error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}
             <button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button>
           </form>
+          {authService ? <button className="login-mode-switch" type="button" onClick={() => { setMode('register'); setError('') }}>ยังไม่มีบัญชี? ลงทะเบียนใช้งาน</button> : null}
           {!authService ? <div className="demo-access">
             <button className="text-button" type="button" aria-expanded={showDemo} onClick={() => setShowDemo((value) => !value)}>บัญชีสำหรับทดลองใช้ <ChevronDown size={16} /></button>
             {showDemo ? (
               <div className="demo-options">
-                <button type="button" onClick={() => fillDemo('patient')}><UserRound size={18} /><span><strong>ผู้ป่วย</strong><small>DM001 / 1234</small></span></button>
-                <button type="button" onClick={() => fillDemo('doctor')}><Stethoscope size={18} /><span><strong>แพทย์</strong><small>DMDR01 / 1234</small></span></button>
+                <button type="button" onClick={() => fillDemo('user')}><UserRound size={18} /><span><strong>User</strong><small>DM001 / 1234</small></span></button>
+                <button type="button" onClick={() => fillDemo('admin')}><Stethoscope size={18} /><span><strong>Admin</strong><small>ADMIN / 1234</small></span></button>
               </div>
             ) : null}
-          </div> : <p className="login-support">ระบบเชื่อมต่อกับบัญชีโครงการของ backend</p>}
-          <p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อเจ้าหน้าที่โครงการ</p>
+          </div> : null}
+          <p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" autoComplete="username" value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" /><label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" autoComplete="name" value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} /><div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" type="date" value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} /></div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} /></div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className="button button-primary button-large" type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError('') }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
         </div>
       </section>
     </main>
@@ -381,7 +419,7 @@ function DesktopRail({ profile, page, navItems, onNavigate, onLogout }: { profil
       </nav>
       <div className="rail-user">
         <Avatar profile={profile} />
-        <div><strong>{profile.displayName}</strong><small>{profile.role === 'doctor' ? 'Doctor / Admin' : profile.username}</small></div>
+        <div><strong>{profile.displayName}</strong><small>{profile.role === 'admin' ? 'Admin' : profile.username}</small></div>
         <button className="icon-button" type="button" aria-label="ออกจากระบบ" onClick={onLogout}><LogOut size={18} /></button>
       </div>
     </aside>
@@ -412,7 +450,7 @@ function TopBar({ profile, open, onToggle, onLogout, onProfile, onAccessibility 
           <button className="profile-button" type="button" aria-expanded={open} aria-haspopup="menu" aria-controls="profile-menu" onClick={onToggle}><Avatar profile={profile} /><span>{profile.displayName}</span><ChevronDown size={16} /></button>
           {open ? (
             <div className="profile-menu" id="profile-menu" role="menu">
-              <div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'doctor' ? 'แพทย์' : 'ผู้ใช้งาน'}</span></div>
+              <div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'admin' ? 'Admin' : 'User'}</span></div>
               <button role="menuitem" type="button" onClick={onProfile}><UserRound size={18} />ข้อมูลของฉัน</button>
               <button role="menuitem" type="button" onClick={onAccessibility}><Info size={18} />การช่วยเหลือการใช้งาน</button>
               <button role="menuitem" type="button" onClick={onLogout}><LogOut size={18} />ออกจากระบบ</button>
@@ -426,11 +464,11 @@ function TopBar({ profile, open, onToggle, onLogout, onProfile, onAccessibility 
 
 function ProfileDialog({ profile, mode, onClose }: { profile: Profile; mode: 'profile' | 'accessibility'; onClose: () => void }) {
   const isProfile = mode === 'profile'
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"><header><div><span className="eyebrow">{isProfile ? 'ข้อมูลส่วนตัว' : 'การช่วยเหลือการใช้งาน'}</span><h2 id="profile-dialog-title">{isProfile ? 'ข้อมูลของฉัน' : 'ใช้งานได้ง่ายสำหรับทุกคน'}</h2><p>{isProfile ? 'ข้อมูลที่ใช้ระบุบัญชีในโครงการ DM Foot Care' : 'คำแนะนำสำหรับการใช้งานบนโทรศัพท์และคอมพิวเตอร์'}</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{isProfile ? <div className="profile-dialog-content"><div className="profile-dialog-identity"><Avatar profile={profile} /><div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'doctor' ? 'แพทย์ / ผู้ดูแล' : 'ผู้เข้าร่วมโครงการ'}</span></div></div><dl className="profile-facts-list"><div><dt>วันเกิด</dt><dd>{profile.dateOfBirth}</dd></div><div><dt>อายุ</dt><dd>{profile.age} ปี</dd></div><div><dt>อาชีพ</dt><dd>{profile.occupation}</dd></div></dl><div className="privacy-note"><ShieldCheck size={20} /><span>ข้อมูลและรูปภาพใช้ภายในโครงการ และไม่เผยแพร่สู่สาธารณะ</span></div></div> : <ul className="accessibility-list"><li><span><Type size={19} /></span><div><strong>อ่านข้อความได้ง่าย</strong><p>ใช้ภาษาไทยสั้น กระชับ และมีหัวข้อบอกขั้นตอนชัดเจน</p></div></li><li><span><ScanLine size={19} /></span><div><strong>ปุ่มใหญ่ กดง่าย</strong><p>ปุ่มหลักและจุดกดสำคัญออกแบบให้เหมาะกับหน้าจอสัมผัส</p></div></li><li><span><Info size={19} /></span><div><strong>ถ้าเจอปัญหา</strong><p>อ่านข้อความแจ้งเตือนและทำตามวิธีแก้ หากยังไม่สำเร็จให้ติดต่อเจ้าหน้าที่โครงการ</p></div></li></ul>}<button className="button button-primary button-large" type="button" onClick={onClose}>ปิด</button></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"><header><div><span className="eyebrow">{isProfile ? 'ข้อมูลส่วนตัว' : 'การช่วยเหลือการใช้งาน'}</span><h2 id="profile-dialog-title">{isProfile ? 'ข้อมูลของฉัน' : 'ใช้งานได้ง่ายสำหรับทุกคน'}</h2><p>{isProfile ? 'ข้อมูลที่ใช้ระบุบัญชีในโครงการ DM Foot Care' : 'คำแนะนำสำหรับการใช้งานบนโทรศัพท์และคอมพิวเตอร์'}</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{isProfile ? <div className="profile-dialog-content"><div className="profile-dialog-identity"><Avatar profile={profile} /><div><strong>{profile.displayName}</strong><span>{profile.username} · {profile.role === 'admin' ? 'Admin' : 'User'}</span></div></div><dl className="profile-facts-list"><div><dt>วันเกิด</dt><dd>{profile.dateOfBirth}</dd></div><div><dt>อายุ</dt><dd>{profile.age} ปี</dd></div><div><dt>อาชีพ</dt><dd>{profile.occupation}</dd></div></dl><div className="privacy-note"><ShieldCheck size={20} /><span>ข้อมูลและรูปภาพใช้ภายในโครงการ และไม่เผยแพร่สู่สาธารณะ</span></div></div> : <ul className="accessibility-list"><li><span><Type size={19} /></span><div><strong>อ่านข้อความได้ง่าย</strong><p>ใช้ภาษาไทยสั้น กระชับ และมีหัวข้อบอกขั้นตอนชัดเจน</p></div></li><li><span><ScanLine size={19} /></span><div><strong>ปุ่มใหญ่ กดง่าย</strong><p>ปุ่มหลักและจุดกดสำคัญออกแบบให้เหมาะกับหน้าจอสัมผัส</p></div></li><li><span><Info size={19} /></span><div><strong>ถ้าเจอปัญหา</strong><p>อ่านข้อความแจ้งเตือนและทำตามวิธีแก้ หากยังไม่สำเร็จให้ติดต่อเจ้าหน้าที่โครงการ</p></div></li></ul>}<button className="button button-primary button-large" type="button" onClick={onClose}>ปิด</button></section></div>
 }
 
 function Avatar({ profile }: { profile: Profile }) {
-  return <span className={profile.role === 'doctor' ? 'avatar doctor' : 'avatar'} aria-hidden="true">{profile.role === 'doctor' ? 'มล' : 'สจ'}</span>
+  return <span className={profile.role === 'admin' ? 'avatar doctor' : 'avatar'} aria-hidden="true">{profile.role === 'admin' ? 'AD' : profile.displayName.slice(0, 2)}</span>
 }
 
 function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations | null; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
@@ -494,7 +532,7 @@ function PatientHome({ profile, examinations: patientExaminations, onStart, onRe
 
       <section className="knowledge-callout reveal">
         <div className="article-icon"><HeartPulse size={26} /></div>
-        <div><span className="eyebrow">แนะนำสำหรับคุณ</span><h2>ดูแลผิวเท้าแห้งอย่างปลอดภัย</h2><p>ทาครีมหลังล้างและซับเท้าให้แห้ง หลีกเลี่ยงการทาระหว่างซอกนิ้วเพื่อลดความอับชื้น</p></div>
+        <div><span className="eyebrow">แนะนำสำหรับคุณ</span><h2>คำแนะนำสำหรับการดูแลเท้า</h2><p>ทาครีมหลังล้างและซับเท้าให้แห้ง หลีกเลี่ยงการทาระหว่างซอกนิ้วเพื่อลดความอับชื้น</p></div>
         <button className="button button-secondary" type="button" onClick={onKnowledge}>อ่านคำแนะนำ <ArrowRight size={18} /></button>
       </section>
       <ClinicalDisclaimer />
@@ -531,6 +569,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   const archiveRef = useRef<OriginalImageArchive>(integrations?.archive ?? new InMemoryOriginalImageArchive())
   const repositoryRef = useRef<ExaminationRepository>(integrations?.repository ?? new InMemoryExaminationRepository())
   const thumbnailServiceRef = useRef<ThumbnailService>(integrations?.thumbnails ?? new BrowserThumbnailService())
+  const thumbnailJobRef = useRef<Promise<Record<FootPosition, string>> | null>(null)
   const [processStep, setProcessStep] = useState(0)
   const [analysisError, setAnalysisError] = useState('')
   const [analysisAttempt, setAnalysisAttempt] = useState(0)
@@ -588,26 +627,39 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     ]
     const provider: FootAssessmentProvider = integrations?.provider ?? new MockFootAssessmentProvider(toMockDiseaseMaster(diseaseRecords))
     const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
-    void photosToBlobs(capturedPhotos).then((images) => runAnalysisWorkflow({
-      examinationId: examinationIdRef.current,
-      username: profile.username,
-      images,
-      diseaseMasterVersion: '1',
-      examinedAt: new Date().toISOString(),
-      archive: archiveRef.current,
-      provider,
-      repository: repositoryRef.current,
-      idempotencyKey: `${examinationIdRef.current}:attempt-${analysisAttempt}`,
-      auditLogger: integrations?.audit,
-      actorId: profile.id,
-    })).then((analysis) => {
+    void photosToBlobs(capturedPhotos).then((images) => {
+      if (!thumbnailJobRef.current) {
+        const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
+        thumbnailJobRef.current = thumbnailJob
+        void thumbnailJob.then((prepared) => setThumbnails(prepared)).catch((error) => {
+          thumbnailJobRef.current = null
+          console.warn('Thumbnail preparation will be retried after review', error)
+        })
+      }
+
+      return runAnalysisWorkflow({
+        examinationId: examinationIdRef.current,
+        username: profile.username,
+        images,
+        analysisImages: createAnalysisImages(capturedPhotos),
+        diseaseMasterVersion: '1',
+        examinedAt: new Date().toISOString(),
+        archive: archiveRef.current,
+        provider,
+        repository: repositoryRef.current,
+        idempotencyKey: `${examinationIdRef.current}:attempt-${analysisAttempt}`,
+        auditLogger: integrations?.audit,
+        actorId: profile.id,
+      })
+    }).then((analysis) => {
       if (cancelled) return
       setAiFindings(analysis.findings)
       setConfirmedFindings(cloneFindings(analysis.findings))
       setProcessStep(3)
       window.setTimeout(() => { if (!cancelled) setStage('human-review') }, 450)
-    }).catch(() => {
+    }).catch((error) => {
       if (cancelled) return
+      console.error('Foot analysis workflow failed', error)
       progressTimers.forEach(window.clearTimeout)
       setAnalysisError('ระบบวิเคราะห์ผลไม่สำเร็จชั่วคราว สามารถลองใหม่ได้โดยไม่ต้องถ่ายภาพซ้ำ')
     })
@@ -624,6 +676,16 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     }, 0)
     try {
       const images = await photosToBlobs(capturedPhotos)
+      let preparedThumbnails = Object.keys(thumbnails).length === examinationPositions.length
+        ? thumbnails as Record<FootPosition, string>
+        : undefined
+      if (!preparedThumbnails && thumbnailJobRef.current) {
+        try {
+          preparedThumbnails = await thumbnailJobRef.current
+        } catch {
+          // Finalization retries thumbnail generation below.
+        }
+      }
       const nextThumbnails = await finalizeExamination({
         examinationId: examinationIdRef.current,
         images,
@@ -634,6 +696,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
         auditLogger: integrations?.audit,
         actorId: profile.id,
         reviewChangedCount,
+        precomputedThumbnails: preparedThumbnails,
       })
       setThumbnails(nextThumbnails)
       const completedAt = new Date()
@@ -649,7 +712,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   }
 
   const reset = () => {
-    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings(cloneFindings(mockFindings)); setConfirmedFindings(cloneFindings(mockFindings)); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); examinationIdRef.current = integrations ? '' : `EX-DEMO-${Date.now()}`; archiveRef.current = integrations?.archive ?? new InMemoryOriginalImageArchive(); repositoryRef.current = integrations?.repository ?? new InMemoryExaminationRepository(); thumbnailServiceRef.current = integrations?.thumbnails ?? new BrowserThumbnailService(); setStage('intro')
+    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings(cloneFindings(mockFindings)); setConfirmedFindings(cloneFindings(mockFindings)); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; examinationIdRef.current = integrations ? '' : `EX-DEMO-${Date.now()}`; archiveRef.current = integrations?.archive ?? new InMemoryOriginalImageArchive(); repositoryRef.current = integrations?.repository ?? new InMemoryExaminationRepository(); thumbnailServiceRef.current = integrations?.thumbnails ?? new BrowserThumbnailService(); setStage('intro')
   }
 
   if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
@@ -717,6 +780,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const cameraRequestRef = useRef(0)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [cameraState, setCameraState] = useState<CameraState>('checking')
   const [qualityState, setQualityState] = useState<QualityState>(photo === 'demo' ? 'passed' : 'idle')
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(photo === 'demo' ? { passed: true, message: 'ภาพตัวอย่างพร้อมใช้สำหรับทดลอง flow', checks: [{ label: 'ภาพตัวอย่าง', passed: true }] } : null)
@@ -736,13 +800,14 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       }
     }, 3000)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false })
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 1280 } }, audio: false })
       window.clearTimeout(timeoutId)
       if (cameraRequestRef.current !== requestId) {
         stream.getTracks().forEach((track) => track.stop())
         return
       }
-      streamRef.current?.getTracks().forEach((track) => track.stop())
       streamRef.current = stream
       setCameraState('ready')
     } catch (error) {
@@ -751,7 +816,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
       setCameraState(denied ? 'denied' : 'unsupported')
     }
-  }, [])
+  }, [facingMode])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void startCamera(), 0)
@@ -764,12 +829,17 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
 
   useEffect(() => {
     if (videoRef.current && streamRef.current) videoRef.current.srcObject = streamRef.current
-  }, [cameraState])
+  }, [cameraState, photo])
 
   const clearPhoto = () => {
     setPhotos((value) => ({ ...value, [position]: undefined }))
     setQualityState('idle')
     setQualityResult(null)
+    window.setTimeout(() => void startCamera(), 0)
+  }
+
+  const switchCamera = () => {
+    setFacingMode((currentMode) => currentMode === 'environment' ? 'user' : 'environment')
   }
 
   const setPhotoAndInspect = async (dataUrl: string, nextQualityResult?: QualityResult) => {
@@ -792,15 +862,15 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const capturePhoto = async () => {
     const video = videoRef.current
     if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
-      inputRef.current?.click()
       return
     }
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
-    // Keep the captured frame lossless here; thumbnail compression belongs to the post-confirmation worker.
-    await setPhotoAndInspect(canvas.toDataURL('image/png'))
+    // A camera frame is already a rendered copy, so high-quality JPEG keeps
+    // clinical detail while avoiding multi-megabyte PNG uploads on mobile.
+    await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
   }
 
   const useDemoPhoto = () => {
@@ -824,8 +894,12 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
           <>
             <p><Sparkles size={18} />{current.hint}</p>
             {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
-            <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" capture="environment" onChange={readPhoto} />
-            <button className="camera-shutter" type="button" aria-label="ถ่ายภาพ" onClick={() => void capturePhoto()}><span><Camera size={28} /></span></button>
+            <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
+            <div className="camera-actions">
+              <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
+              <button className="camera-shutter" type="button" aria-label="ถ่ายภาพ" disabled={cameraState !== 'ready'} onClick={() => void capturePhoto()}><span><Camera size={30} /></span></button>
+              <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>กลับกล้อง</span></button>
+            </div>
             <button className="text-button demo-photo-button" type="button" onClick={useDemoPhoto}><ImageIcon size={17} />ใช้ภาพตัวอย่างสำหรับทดลอง</button>
           </>
         ) : (
@@ -878,15 +952,15 @@ function ProcessingScreen({ current, error, onRetry }: { current: number; error:
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
-  const steps = ['เตรียมและตรวจสอบภาพ', 'บันทึกรูปต้นฉบับอย่างปลอดภัย', 'วิเคราะห์ตามเกณฑ์ของแพทย์', 'เตรียมรายงาน']
+  const analysisProgress = Math.min(92, 18 + current * 25)
   return (
     <div className="processing-screen">
       <div className="processing-visual"><div className="processing-ring"><Footprints size={42} /></div><span className="orbit-dot" /></div>
-      <span className="eyebrow">กรุณารอสักครู่</span><h1>กำลังประเมินผล</h1><p>ระบบกำลังตรวจภาพเท้าทั้ง 4 มุมตามรายการที่แพทย์กำหนด</p>
+      <span className="eyebrow">กรุณารอสักครู่</span><h1>กำลังประเมินผล</h1><p>ระบบกำลังตรวจภาพเท้าทั้ง 4 มุม</p>
       <div className="progress-panel">
-        <div className="progress-meta"><span>ความคืบหน้า</span><strong>{Math.min(92, 18 + current * 25)}%</strong></div>
-        <div className="progress-track"><span style={{ width: `${Math.min(92, 18 + current * 25)}%` }} /></div>
-        <ol>{steps.map((label, index) => <li key={label} className={index < current ? 'done' : index === current ? 'current' : ''}><span>{index < current ? <Check size={16} /> : index + 1}</span><div><strong>{label}</strong>{index === current ? <small>กำลังดำเนินการ…</small> : null}</div></li>)}</ol>
+        <div className="progress-meta"><span>ความคืบหน้า</span><strong>{analysisProgress}%</strong></div>
+        <div className="progress-track"><span style={{ width: `${analysisProgress}%` }} /></div>
+        <ol><li className="current"><span><Sparkles size={16} /></span><div><strong>กำลังวิเคราะห์ภาพ</strong><small>กำลังดำเนินการ…</small></div></li></ol>
       </div>
       {!online ? <div className="processing-error offline-error" role="alert"><WifiOff size={21} /><div><strong>ไม่มีอินเทอร์เน็ตชั่วคราว</strong><p>เชื่อมต่ออินเทอร์เน็ตก่อน ระบบจะไม่ส่งภาพซ้ำจนกว่าคุณจะพร้อม</p><button className="button button-secondary button-small" type="button" disabled>รอการเชื่อมต่อ…</button></div></div> : recoveryReady ? <div className="processing-error offline-error" role="alert"><WifiOff size={21} /><div><strong>เชื่อมต่อกลับมาแล้ว</strong><p>ภาพยังอยู่บนอุปกรณ์และยังไม่ได้ส่งซ้ำ กดเพื่อประเมินต่อ</p><button className="button button-secondary button-small" type="button" onClick={() => { setRecoveryReady(false); onRetry() }}>ลองประเมินอีกครั้ง</button></div></div> : error ? <div className="processing-error" role="alert"><AlertTriangle size={21} /><div><strong>ยังประเมินผลไม่สำเร็จ</strong><p>{error}</p><button className="button button-secondary button-small" type="button" onClick={onRetry}>ลองประเมินอีกครั้ง</button></div></div> : null}
       <div className="stay-note"><Info size={18} />กรุณาอย่าปิดหน้านี้ระหว่างดำเนินการ</div>
@@ -1095,7 +1169,11 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
   const [editing, setEditing] = useState<UserRecord | null>(null)
   const [creating, setCreating] = useState(false)
   const [historyUser, setHistoryUser] = useState<UserRecord | null>(null)
-  const filtered = users.filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase()))
+  const filtered = users.filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase())).sort((left, right) => {
+    const priority = { pending: 0, active: 1, inactive: 2 }
+    return priority[left.status] - priority[right.status] || left.username.localeCompare(right.username)
+  })
+  const pendingCount = users.filter((user) => user.status === 'pending').length
   const toggle = (id: string) => {
     const user = users.find((item) => item.id === id)
     if (!user) return
@@ -1104,13 +1182,12 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
       void adminService.setUserStatus(id, nextStatus).then(() => {
         setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
         void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
-        showToast(`${nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
+        showToast(`${user.status === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
       }).catch(() => showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ'))
       return
     }
     setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
   }
-  const openCreate = () => { setEditing(null); setCreating(true) }
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveUser = async (draft: UserFormDraft) => {
     if (adminService) {
@@ -1139,7 +1216,7 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
     }
     closeForm()
   }
-  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="สร้าง แก้ไข และติดตามประวัติของผู้ใช้ในกลุ่มทดลอง" action={<button className="button button-primary" type="button" onClick={openCreate}><Plus size={18} />เพิ่มผู้ใช้งาน</button>} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => <article key={user.id}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}</span><div className="row-actions"><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button><button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button></div></article>)}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} onResetPin={(username) => { const target = users.find((item) => item.username === username); if (adminService && target) void adminService.resetUserPin(target.id).then(() => showToast(`สร้าง PIN ใหม่สำหรับ ${username} แล้ว`)).catch(() => showToast('รีเซ็ต PIN ไม่สำเร็จ')); else showToast(`สร้าง PIN ใหม่สำหรับ ${username} แล้ว`) }} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
 }
 
 function UserHistoryModal({ user, diseaseRecords = diseases, adminService, onClose }: { user: UserRecord; diseaseRecords?: Disease[]; adminService?: AdminService; onClose: () => void }) {
@@ -1161,7 +1238,7 @@ function UserHistoryModal({ user, diseaseRecords = diseases, adminService, onClo
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังสำหรับการติดตามโดยแพทย์</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ')}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}</div>
 }
 
-function UserFormModal({ user, onClose, onSave, onResetPin }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void>; onResetPin: (username: string) => void }) {
+function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void> }) {
   const [draft, setDraft] = useState<Omit<UserRecord, 'id' | 'lastExam'> & { pin: string }>(() => user
     ? { username: user.username, name: user.name, dateOfBirth: user.dateOfBirth, age: calculateAge(user.dateOfBirth), occupation: user.occupation, pinConfigured: user.pinConfigured, status: user.status, pin: '' }
     : { username: '', name: '', dateOfBirth: '1960-01-01', age: 0, occupation: '', pinConfigured: false, status: 'active', pin: '' })
@@ -1174,7 +1251,7 @@ function UserFormModal({ user, onClose, onSave, onResetPin }: { user: UserRecord
     const safeDraft: Omit<UserRecord, 'id' | 'lastExam'> = { username: draft.username.trim().toUpperCase(), name: draft.name.trim(), dateOfBirth: draft.dateOfBirth, age: calculateAge(draft.dateOfBirth), occupation: draft.occupation.trim(), pinConfigured: Boolean(draft.pin || draft.pinConfigured), status: draft.status }
     onSave({ ...safeDraft, ...(draft.pin ? { pin: draft.pin } : {}) })
   }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title"><header><div><span className="eyebrow">{user ? 'แก้ไขบัญชี' : 'บัญชีใหม่'}</span><h2 id="user-form-title">{user ? `แก้ไข ${user.username}` : 'เพิ่มผู้ใช้งาน'}</h2><p>ข้อมูลนี้ใช้สำหรับกลุ่มทดลองและสามารถแก้ไขภายหลังได้</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="form-username">Username</label><input id="form-username" value={draft.username} onChange={(event) => update('username', event.target.value)} placeholder="เช่น DM005" autoComplete="off" /><label className="field-label" htmlFor="form-name">ชื่อ-นามสกุล</label><input id="form-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="ชื่อผู้ใช้งาน" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="form-dob">วันเดือนปีเกิด</label><input id="form-dob" type="date" value={draft.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /><div className="derived-metric"><span>อายุ / Generation</span><strong>{calculateAge(draft.dateOfBirth)} ปี · {calculateGeneration(draft.dateOfBirth)}</strong></div></div><div><label className="field-label" htmlFor="form-status">สถานะ</label><select id="form-status" value={draft.status} onChange={(event) => update('status', event.target.value as UserRecord['status'])}><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select></div></div><label className="field-label" htmlFor="form-occupation">อาชีพ</label><input id="form-occupation" value={draft.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="อาชีพ" /><label className="field-label" htmlFor="form-pin">PIN เริ่มต้น (4 หลัก){user ? ' · กรอกใหม่เมื่อเปลี่ยน PIN' : ''}</label><input id="form-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={draft.pin} onChange={(event) => update('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder={user ? 'เว้นว่างเพื่อใช้ PIN เดิม' : 'เช่น 1234'} autoComplete="new-password" /><small className="field-helper">ระบบจะไม่แสดงหรือเก็บ PIN ดิบในหน้าจอจัดการ</small>{user ? <button className="button button-ghost reset-pin-button" type="button" onClick={() => onResetPin(user.username)}><RotateCcw size={17} />รีเซ็ต PIN</button> : null}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกข้อมูล</button></div></form></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title"><header><div><span className="eyebrow">{user ? 'แก้ไขบัญชี' : 'บัญชีใหม่'}</span><h2 id="user-form-title">{user ? `แก้ไข ${user.username}` : 'เพิ่มผู้ใช้งาน'}</h2><p>ข้อมูลนี้ใช้สำหรับกลุ่มทดลองและสามารถแก้ไขภายหลังได้</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="form-username">Username</label><input id="form-username" value={draft.username} onChange={(event) => update('username', event.target.value)} placeholder="เช่น DM005" autoComplete="off" /><label className="field-label" htmlFor="form-name">ชื่อ-นามสกุล</label><input id="form-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="ชื่อผู้ใช้งาน" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="form-dob">วันเดือนปีเกิด</label><input id="form-dob" type="date" value={draft.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /><div className="derived-metric"><span>อายุ / Generation</span><strong>{calculateAge(draft.dateOfBirth)} ปี · {calculateGeneration(draft.dateOfBirth)}</strong></div></div><div><label className="field-label" htmlFor="form-status">สถานะ</label><select id="form-status" value={draft.status} onChange={(event) => update('status', event.target.value as UserRecord['status'])}><option value="pending">รออนุมัติ</option><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select></div></div><label className="field-label" htmlFor="form-occupation">อาชีพ</label><input id="form-occupation" value={draft.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="อาชีพ" /><label className="field-label" htmlFor="form-pin">PIN เริ่มต้น (4 หลัก){user ? ' · กรอกใหม่เมื่อเปลี่ยน PIN' : ''}</label><input id="form-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={draft.pin} onChange={(event) => update('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder={user ? 'เว้นว่างเพื่อใช้ PIN เดิม' : 'เช่น 1234'} autoComplete="new-password" /><small className="field-helper">ระบบจะไม่แสดงหรือเก็บ PIN ดิบในหน้าจอจัดการ หากต้องการเปลี่ยน PIN ให้กรอกเลขใหม่แล้วบันทึก</small><div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกข้อมูล</button></div></form></section></div>
 }
 
 function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, adminService, auditLogger }: { diseases: typeof diseases; setDiseases: React.Dispatch<React.SetStateAction<typeof diseases>>; showToast: (text: string) => void; adminService?: AdminService; auditLogger?: AuditLogger }) {

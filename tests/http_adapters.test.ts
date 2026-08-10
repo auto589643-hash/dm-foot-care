@@ -52,7 +52,7 @@ const image = new Blob(['image'], { type: 'image/png' })
 assert.equal(await archive.uploadOriginal('drive-folder-1', 'left-dorsal', image), 'drive-file-1')
 const uploadCall = calls.at(-1)
 assert.equal(uploadCall?.init.headers instanceof Headers ? uploadCall.init.headers.get('x-dmfc-image-position') : undefined, 'left-dorsal')
-assert.equal(uploadCall?.init.headers instanceof Headers ? uploadCall.init.headers.get('x-dmfc-drive-filename') : undefined, '01_left_dorsal.png')
+assert.equal(uploadCall?.init.headers instanceof Headers ? uploadCall.init.headers.get('x-dmfc-drive-filename') : undefined, encodeURIComponent('หลังเท้าซ้าย.png'))
 assert.equal(uploadCall?.init.body instanceof Blob, true)
 
 const provider = new HttpFootAssessmentProvider(client)

@@ -1,4 +1,4 @@
-export type Role = 'patient' | 'doctor'
+export type Role = 'user' | 'admin'
 export type Page = 'home' | 'exam' | 'history' | 'knowledge' | 'admin-home' | 'users' | 'diseases' | 'admin-knowledge'
 export type Severity = 'เล็กน้อย' | 'ปานกลาง' | 'รุนแรง'
 export type FootPosition = 'left-dorsal' | 'left-sole' | 'right-dorsal' | 'right-sole'
@@ -79,6 +79,14 @@ export interface UserRecord {
   age: number
   occupation: string
   pinConfigured: boolean
-  status: 'active' | 'inactive'
+  status: 'pending' | 'active' | 'inactive'
   lastExam: string
+}
+
+export interface RegistrationInput {
+  username: string
+  displayName: string
+  dateOfBirth: string
+  occupation: string
+  pin: string
 }

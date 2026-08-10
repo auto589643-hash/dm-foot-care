@@ -63,22 +63,22 @@ export class BackendHttpClient {
     return this.request<T>(path, { method: 'GET' })
   }
 
-  async postJson<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
+  async postJson<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }, timeoutMs)
   }
 
-  async postBinary<T>(path: string, body: Blob, headers: Record<string, string> = {}): Promise<T> {
-    return this.request<T>(path, { method: 'POST', body, headers: { 'content-type': body.type || 'application/octet-stream', ...headers } })
+  async postBinary<T>(path: string, body: Blob, headers: Record<string, string> = {}, timeoutMs = 90_000): Promise<T> {
+    return this.request<T>(path, { method: 'POST', body, headers: { 'content-type': body.type || 'application/octet-stream', ...headers } }, timeoutMs)
   }
 
   async patchJson<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  private async request<T>(path: string, init: RequestInit, timeoutOverrideMs?: number): Promise<T> {
     const url = new URL(path.replace(/^\//, ''), this.baseUrl)
     const controller = new AbortController()
-    const timeoutId = globalThis.setTimeout(() => controller.abort(), this.timeoutMs)
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutOverrideMs ?? this.timeoutMs)
     const headers = new Headers(init.headers)
     headers.set('accept', 'application/json')
     const accessToken = await this.getAccessToken?.()
@@ -127,6 +127,10 @@ export class HttpAuthService implements AuthService {
     const response = await this.client.postJson<SessionResponse>('/v1/auth/username/sign-in', { username, pin })
     this.onAccessToken?.(readAccessToken(response))
     return unwrapProfile(response)
+  }
+
+  async register(input: import('../types.ts').RegistrationInput): Promise<void> {
+    await this.client.postJson('/v1/auth/register', input)
   }
 
   async signOut(): Promise<void> {
@@ -220,8 +224,8 @@ export class HttpFootAssessmentProvider implements FootAssessmentProvider {
     this.client = client
   }
 
-  async analyze(input: { examinationId: string; idempotencyKey: string; imageReferences: Record<FootPosition, string>; diseaseMasterVersion: string }): Promise<{ runId: string; rawResult: unknown; validation: AiValidationResult; findings: Finding[] }> {
-    return this.client.postJson('/v1/analysis', input)
+  async analyze(input: { examinationId: string; idempotencyKey: string; imageReferences: Partial<Record<FootPosition, string>>; analysisImages?: Partial<Record<FootPosition, string>>; diseaseMasterVersion: string }): Promise<{ runId: string; rawResult: unknown; validation: AiValidationResult; findings: Finding[] }> {
+    return this.client.postJson('/v1/analysis', input, 120_000)
   }
 }
 
@@ -235,7 +239,7 @@ export class HttpThumbnailService implements ThumbnailService {
   async generateAndStore(examinationId: string, images: Record<FootPosition, Blob>): Promise<Record<FootPosition, string>> {
     const originals = Object.fromEntries(await Promise.all(Object.entries(images).map(async ([position, image]) => [position, await blobToDataUrl(image)]))) as Partial<Record<FootPosition, string>>
     const thumbnails = await createThumbnails(originals)
-    const response = await this.client.postJson<{ thumbnails: Record<FootPosition, string> }>(`/v1/examinations/${encodeURIComponent(examinationId)}/thumbnails`, { thumbnails })
+    const response = await this.client.postJson<{ thumbnails: Record<FootPosition, string> }>(`/v1/examinations/${encodeURIComponent(examinationId)}/thumbnails`, { thumbnails }, 90_000)
     return response.thumbnails
   }
 }
@@ -290,7 +294,10 @@ export class HttpExaminationRepository implements ExaminationRepository {
   }
 
   async saveThumbnailReferences(input: { examinationId: string; thumbnails: Record<FootPosition, string> }): Promise<void> {
-    await this.client.postJson(`/v1/examinations/${encodeURIComponent(input.examinationId)}/thumbnail-references`, input)
+    // The thumbnail endpoint atomically stores each object and its private
+    // storage path. Its response contains short-lived display URLs, which must
+    // never be written back into thumbnail_path.
+    void input
   }
 
   async updateStatus(examinationId: string, status: ExaminationDraft['status']): Promise<void> {
@@ -341,9 +348,13 @@ export class HttpAdminService implements AdminService {
 
   async saveUser(input: import('./contracts.ts').AdminUserWriteInput): Promise<import('../types.ts').UserRecord> {
     const path = input.id ? `/v1/admin/users/${encodeURIComponent(input.id)}` : '/v1/admin/users'
-    const response = input.id
-      ? await this.client.patchJson<import('../types.ts').UserRecord | { user?: import('../types.ts').UserRecord }>(path, input)
-      : await this.client.postJson<import('../types.ts').UserRecord | { user?: import('../types.ts').UserRecord }>(path, input)
+    if (input.id) {
+      await this.client.patchJson(path, input)
+      const saved = (await this.listUsers()).find((user) => user.id === input.id)
+      if (!saved) throw new Error('ไม่พบข้อมูลผู้ใช้หลังบันทึก')
+      return saved
+    }
+    const response = await this.client.postJson<import('../types.ts').UserRecord | { user?: import('../types.ts').UserRecord }>(path, input)
     return readObjectResponse(response, 'user')
   }
 

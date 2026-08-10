@@ -1,5 +1,8 @@
 import crypto from 'node:crypto'
-import { sendJson } from './http.mjs'
+import { readCookie, sendJson, setCookie } from './http.mjs'
+
+const REFRESH_COOKIE = 'dmfc_refresh'
+const DEFAULT_SESSION_MAX_AGE = 60 * 60 * 24 * 30
 
 function config() {
   const url = String(process.env.SUPABASE_URL || '').replace(/\/$/, '')
@@ -32,11 +35,36 @@ export async function requireAdminUser(req, res) {
   if (!session) return null
   const roles = await supabaseRest(`/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(session.user.id)}&limit=1`)
   const role = roles[0]?.role
-  if (role !== 'admin' && role !== 'doctor') {
+  if (role !== 'admin') {
     sendJson(res, 403, { message: 'สิทธิ์ผู้ดูแลระบบไม่เพียงพอ' })
     return null
   }
   return { ...session, role }
+}
+
+export function setRefreshCookie(res, refreshToken) {
+  const configured = Number(process.env.DMFC_SESSION_MAX_AGE_SECONDS)
+  const maxAge = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SESSION_MAX_AGE
+  setCookie(res, REFRESH_COOKIE, refreshToken, { maxAge, httpOnly: true, secure: process.env.NODE_ENV !== 'development', sameSite: 'Lax' })
+}
+
+export function clearRefreshCookie(res) {
+  setCookie(res, REFRESH_COOKIE, '', { maxAge: 0, httpOnly: true, secure: process.env.NODE_ENV !== 'development', sameSite: 'Lax' })
+}
+
+export async function refreshSupabaseSession(req) {
+  const refreshToken = readCookie(req, REFRESH_COOKIE)
+  if (!refreshToken) return null
+  const { url, publishableKey } = config()
+  const response = await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { apikey: publishableKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!response.ok) return null
+  const token = await response.json()
+  if (!token?.access_token || !token?.refresh_token || !token?.user?.id) return null
+  return { token: token.access_token, refreshToken: token.refresh_token, expiresIn: token.expires_in, user: token.user }
 }
 
 export async function loadActiveDiseaseMaster() {
@@ -131,10 +159,7 @@ export async function loadProfileForUser(userId) {
   let age = today.getUTCFullYear() - birth.getUTCFullYear()
   const beforeBirthday = today.getUTCMonth() < birth.getUTCMonth() || (today.getUTCMonth() === birth.getUTCMonth() && today.getUTCDate() < birth.getUTCDate())
   if (beforeBirthday) age -= 1
-  // The current patient/doctor UI has one staff workspace. Keep database
-  // authorization as `admin`, while exposing the staff workspace role to the
-  // existing client until a distinct admin shell is introduced.
-  const role = roles[0]?.role === 'doctor' || roles[0]?.role === 'admin' ? 'doctor' : 'patient'
+  const role = roles[0]?.role === 'admin' ? 'admin' : 'user'
   return {
     id: profile.user_id,
     username: profile.username,
@@ -187,5 +212,5 @@ export async function signInWithUsername(username, pin) {
   if (!tokenResponse.ok) return null
   const token = await tokenResponse.json()
   const mappedProfile = await loadProfileForUser(profile.user_id)
-  return mappedProfile ? { accessToken: token.access_token, expiresIn: token.expires_in, profile: mappedProfile } : null
+  return mappedProfile ? { accessToken: token.access_token, refreshToken: token.refresh_token, expiresIn: token.expires_in, profile: mappedProfile } : null
 }
