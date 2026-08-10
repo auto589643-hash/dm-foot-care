@@ -18,15 +18,21 @@ export interface RuntimeIntegrationOptions {
 }
 
 /**
- * Select the production HTTP boundary only when an API base URL is configured.
- * The access token stays in memory; deployments may additionally use an HttpOnly
- * session cookie for restoreSession(). With no URL, the app remains demo-only.
+ * Use an explicitly configured API URL when available. Vercel preview
+ * deployments otherwise use their own /api boundary so previews exercise the
+ * backend from the same branch instead of silently falling back to demo mode.
+ * Local development remains demo-only unless VITE_DMFC_API_BASE_URL is set.
  */
 export function createRuntimeIntegrationState(environment: RuntimeEnvironment, options: RuntimeIntegrationOptions = {}): RuntimeIntegrationState {
   let accessToken: string | null = null
   const getAccessToken = () => accessToken
   const setAccessToken = (token: string | null) => { accessToken = token }
-  const baseUrl = environment.VITE_DMFC_API_BASE_URL?.trim()
+  const configuredBaseUrl = environment.VITE_DMFC_API_BASE_URL?.trim()
+  const vercelPreviewBaseUrl = typeof window !== 'undefined' && /\.vercel\.app$/i.test(window.location.hostname)
+    ? `${window.location.origin}/api/`
+    : ''
+  const baseUrl = configuredBaseUrl || vercelPreviewBaseUrl
+
   if (!baseUrl) return { integrations: null, getAccessToken, setAccessToken }
 
   return {
