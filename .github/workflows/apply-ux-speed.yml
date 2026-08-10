@@ -30,6 +30,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Normalize codemod target
+        run: sed -i 's/โหลดข้อมูล Doctor workspace ไม่สำเร็จ/โหลดข้อมูล Admin workspace ไม่สำเร็จ/g' scripts/apply-ux-speed.mjs
+
       - name: Apply UX patch
         run: node scripts/apply-ux-speed.mjs
 
