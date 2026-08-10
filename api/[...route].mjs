@@ -50,13 +50,23 @@ export default async function handler(req, res) {
   if (path === 'v1/admin/users') return adminUsers(req, res)
   if (path === 'v1/admin/diseases') return adminDiseases(req, res)
   if (path === 'v1/admin/knowledge') return adminKnowledge(req, res)
-
-  let match = path.match(/^v1\/examinations\/([^/]+)\/images\/([^/]+)$/)
+  
+  let match = path.match(
+    /^v1\/admin\/diseases\/([^/]+)(?:\/(status))?$/
+  )
+  
   if (match) {
-    withParams(req, { id: decodeURIComponent(match[1]), position: decodeURIComponent(match[2]) })
-    return examinationImagePosition(req, res)
+    withParams(req, {
+      diseaseId: decodeURIComponent(match[1]),
+      action: match[2] || '',
+    })
+  
+    return adminDiseases(req, res)
   }
-  match = path.match(/^v1\/admin\/users\/([^/]+)\/examinations$/)
+  
+  match = path.match(
+    /^v1\/examinations\/([^/]+)\/images\/([^/]+)$/
+  )
   if (match) {
     withParams(req, { userId: decodeURIComponent(match[1]) })
     return adminUserExaminations(req, res)
