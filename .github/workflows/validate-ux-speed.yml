@@ -1,0 +1,29 @@
+name: Validate UX speed changes
+
+on:
+  push:
+    branches:
+      - feat/ux-speed-optimistic
+    paths:
+      - .github/workflows/validate-ux-speed.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ux-speed-optimistic
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
