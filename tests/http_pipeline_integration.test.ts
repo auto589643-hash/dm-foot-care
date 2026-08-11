@@ -47,8 +47,15 @@ const fetchImpl: typeof fetch = async (input, init = {}) => {
     return json({ ok: true })
   }
   if (url.pathname === '/v1/examinations/ex-42/confirmed-findings' && method === 'POST') {
-    confirmed.push((body as { diseaseId: string }).diseaseId)
+    const payload = body as { diseaseId?: string; findings?: Array<{ diseaseId: string }> }
+    if (payload.diseaseId) confirmed.push(payload.diseaseId)
+    if (payload.findings) confirmed.push(...payload.findings.map((finding) => finding.diseaseId))
     return json({ ok: true })
+  }
+  if (url.pathname === '/v1/examinations/ex-42/finalize' && method === 'POST') {
+    const payload = body as { findings?: Array<{ diseaseId: string }> }
+    confirmed.push(...(payload.findings ?? []).map((finding) => finding.diseaseId))
+    return json({ id: 'ex-42', status: 'confirmed' })
   }
   if (url.pathname === '/v1/examinations/ex-42/thumbnails' && method === 'POST') return json({ thumbnails: { 'left-dorsal': 'thumb-left', 'left-sole': 'thumb-left-sole', 'right-dorsal': 'thumb-right', 'right-sole': 'thumb-right-sole' } })
   if (url.pathname === '/v1/examinations/ex-42/thumbnail-references' && method === 'POST') return json({ ok: true })
@@ -98,14 +105,16 @@ const thumbnails = await finalizeExamination({
   reviewChangedCount: 1,
 })
 assert.equal(thumbnails['left-dorsal'], 'thumb-left')
-assert.deepEqual(statuses, ['uploading', 'analyzing', 'awaiting_review', 'thumbnailing', 'confirmed'])
+assert.deepEqual(statuses, ['uploading', 'analyzing', 'awaiting_review'])
 assert.deepEqual(confirmed, ['D001'])
-const confirmedCall = calls.find((call) => call.path === '/v1/examinations/ex-42/confirmed-findings')
-assert.equal((confirmedCall?.body as Record<string, unknown>)?.confirmedBy, undefined)
+const finalizeCall = calls.find((call) => call.path === '/v1/examinations/ex-42/finalize')
+assert.deepEqual(finalizeCall?.body, { findings: [{ diseaseId: 'D001', severity: 'ปานกลาง' }], reviewChangedCount: 1 })
+assert.equal(calls.filter((call) => /^\/v1\/examinations\/ex-42\/images\//.test(call.path) && call.method === 'POST').length, 0)
 assert.equal(calls.filter((call) => call.path === '/v1/original-images').length, 4)
+assert.ok(calls.filter((call) => call.path === '/v1/original-images').every((call) => call.headers.get('x-dmfc-examination-id') === 'ex-42'))
 const folderCall = calls.find((call) => call.path === '/v1/original-images/folders')
 assert.deepEqual(folderCall?.body, { examinationId: 'ex-42', examinedAt: '2026-08-08T02:00:00.000Z' })
-assert.deepEqual(auditEvents.map((event) => event.eventType), ['image_uploaded', 'image_uploaded', 'image_uploaded', 'image_uploaded', 'ai_analysis_started', 'ai_analysis_completed', 'ai_result_recorded', 'human_review_edited', 'final_result_submitted'])
+assert.deepEqual(auditEvents.map((event) => event.eventType), ['image_uploaded', 'image_uploaded', 'image_uploaded', 'image_uploaded', 'ai_analysis_started', 'ai_analysis_completed', 'ai_result_recorded'])
 assert.ok(auditEvents.every((event) => !('actorId' in event)))
 assert.ok(calls.slice(1).every((call) => call.headers.get('authorization') === 'Bearer pipeline-token'))
 
