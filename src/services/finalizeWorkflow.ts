@@ -33,6 +33,21 @@ export class FinalizePipelineError extends Error {
 export async function finalizeExamination(input: FinalizeExaminationInput): Promise<Record<FootPosition, string>> {
   const { examinationId, images, thumbnailService, repository, confirmedFindings = [], confirmedBy, auditLogger, actorId, reviewChangedCount = 0, precomputedThumbnails } = input
   try {
+    // The production HTTP repository can persist confirmed findings, audit
+    // rows and the final examination state server-side in one browser request.
+    // Test/local adapters retain the granular fallback below.
+    if (confirmedBy && repository.finalizeExamination) {
+      const thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
+      await repository.saveThumbnailReferences({ examinationId, thumbnails })
+      await repository.finalizeExamination({
+        examinationId,
+        confirmedBy,
+        reviewChangedCount,
+        findings: confirmedFindings.map((finding) => ({ diseaseId: finding.diseaseId, severity: finding.severity })),
+      })
+      return thumbnails
+    }
+
     await repository.updateStatus(examinationId, 'thumbnailing')
     if (confirmedBy && confirmedFindings.length) {
       if (repository.saveConfirmedFindings) {
