@@ -24,11 +24,16 @@ export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   setCors(res)
   if (req.method !== 'GET') return sendJson(res, 405, { message: 'Method not allowed' })
+  const startedAt = Date.now()
   const session = await requireSupabaseUser(req, res)
   if (!session) return
   try {
+    const requestedLimit = Number.parseInt(String(req.query?.limit || ''), 10)
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 50) : null
+    const includeDiseaseImages = String(req.query?.includeDiseaseImages ?? 'true').toLowerCase() !== 'false'
+    const articlePath = `/rest/v1/knowledge_articles?select=id,disease_id,category,severity_id,title,summary,body,image_path,status&status=eq.published&order=updated_at.desc${limit ? `&limit=${limit}` : ''}`
     const [articles, diseases, levels] = await Promise.all([
-      supabaseRest('/rest/v1/knowledge_articles?select=id,disease_id,category,severity_id,title,summary,body,image_path,status&status=eq.published&order=updated_at.desc'),
+      supabaseRest(articlePath),
       supabaseRest('/rest/v1/diseases?select=id,code,name,category,description,detection_criteria,care_instruction,recommendation,reference_image_path,active,revision&active=eq.true&order=code'),
       supabaseRest('/rest/v1/disease_severity_levels?select=id,disease_id,label,rank,criteria&order=rank'),
     ])
@@ -70,7 +75,7 @@ export default async function handler(req, res) {
 
     const mappedDiseases = await Promise.all(diseases.map(async (disease) => {
       let referenceImage
-      if (disease.reference_image_path) {
+      if (includeDiseaseImages && disease.reference_image_path) {
         try { referenceImage = await createStorageSignedUrl('dmfc-disease-reference', disease.reference_image_path) } catch { referenceImage = undefined }
       }
       return {
@@ -89,6 +94,8 @@ export default async function handler(req, res) {
       }
     }))
 
+    res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader('Server-Timing', `knowledge;dur=${Date.now() - startedAt}`)
     return sendJson(res, 200, { articles: mappedArticles, diseases: mappedDiseases })
   } catch (error) {
     console.error('knowledge read failed', error)
