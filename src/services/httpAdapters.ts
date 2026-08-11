@@ -346,6 +346,14 @@ export class HttpExaminationRepository implements ExaminationRepository {
     await this.client.postJson(`/v1/examinations/${encodeURIComponent(input.examinationId)}/confirmed-findings`, { findings: input.findings })
   }
 
+  async finalizeExamination(input: { examinationId: string; findings: Array<{ diseaseId: string; severity: Severity | null; aiFindingId?: string }>; confirmedBy: string; reviewChangedCount: number }): Promise<void> {
+    void input.confirmedBy
+    await this.client.postJson(`/v1/examinations/${encodeURIComponent(input.examinationId)}/finalize`, {
+      findings: input.findings,
+      reviewChangedCount: input.reviewChangedCount,
+    })
+  }
+
   async saveThumbnailReferences(input: { examinationId: string; thumbnails: Record<FootPosition, string> }): Promise<void> {
     // The thumbnail endpoint atomically stores each object and its private
     // storage path. Its response contains short-lived display URLs, which must
