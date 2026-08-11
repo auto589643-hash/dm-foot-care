@@ -391,16 +391,17 @@ function PatientPages({ profile, page, setPage, examStage, setExamStage, examina
   if (page === 'exam') return <ExaminationFlow profile={profile} diseaseRecords={patientDiseases} integrations={integrations} stage={examStage} setStage={setExamStage} onHome={() => setPage('home')} onCompleted={onExamCompleted} />
   if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} />
   if (page === 'knowledge') return <KnowledgePage articles={patientKnowledge} diseaseRecords={patientDiseases} showToast={showToast} knowledgeService={integrations.knowledge} />
-  return <PatientHome profile={profile} examinations={patientExaminations} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { const draft = readExaminationDraft(); if (draft) { setExamStage(draft.stage); setPage('exam') } }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
+  return <PatientHome profile={profile} examinations={patientExaminations} articles={patientKnowledge} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { const draft = readExaminationDraft(); if (draft) { setExamStage(draft.stage); setPage('exam') } }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
 }
 
-function PatientHome({ profile, examinations: patientExaminations, onStart, onResume, onHistory, onKnowledge }: { profile: Profile; examinations: Examination[]; onStart: () => void; onResume: () => void; onHistory: () => void; onKnowledge: () => void }) {
+function PatientHome({ profile, examinations: patientExaminations, articles, onStart, onResume, onHistory, onKnowledge }: { profile: Profile; examinations: Examination[]; articles: KnowledgeArticle[]; onStart: () => void; onResume: () => void; onHistory: () => void; onKnowledge: () => void }) {
   const latest = patientExaminations[0]
   const hasDraft = Boolean(readExaminationDraft())
   const latestFindings = latest?.findings ?? []
   const latestSeverity = latestFindings.length ? latestFindings.reduce((highest, finding) => severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest, latestFindings[0].severity) : null
   const latestSummary = latestFindings.length ? (latestSeverity === 'รุนแรง' ? 'ควรพบแพทย์' : 'ควรติดตาม') : 'ยังไม่พบภาวะ'
   const homeTrend = buildHomeTrend(patientExaminations)
+  const featuredArticle = articles[0]
   return (
     <div className="page patient-home">
       <section className="welcome-row reveal">
@@ -449,8 +450,8 @@ function PatientHome({ profile, examinations: patientExaminations, onStart, onRe
 
       <section className="knowledge-callout reveal">
         <div className="article-icon"><HeartPulse size={26} /></div>
-        <div><span className="eyebrow">แนะนำสำหรับคุณ</span><h2>คำแนะนำสำหรับการดูแลเท้า</h2><p>ทาครีมหลังล้างและซับเท้าให้แห้ง หลีกเลี่ยงการทาระหว่างซอกนิ้วเพื่อลดความอับชื้น</p></div>
-        <button className="button button-secondary" type="button" onClick={onKnowledge}>อ่านคำแนะนำ <ArrowRight size={18} /></button>
+        <div><span className="eyebrow">แนะนำสำหรับคุณ</span><h2>{featuredArticle?.title ?? 'คลังความรู้ดูแลเท้า'}</h2><p>{featuredArticle?.summary ?? 'เมื่อผู้ดูแลเผยแพร่บทความ คำแนะนำจะปรากฏในส่วนนี้'}</p></div>
+        <button className="button button-secondary" type="button" onClick={onKnowledge}>{featuredArticle ? 'อ่านคำแนะนำ' : 'เปิดคลังความรู้'} <ArrowRight size={18} /></button>
       </section>
       <ClinicalDisclaimer />
     </div>
@@ -482,6 +483,15 @@ function MiniTrend({ examinations: patientExaminations, diseaseId }: { examinati
 
 function ClinicalDisclaimer() {
   return <div className="disclaimer"><Info size={18} /><p><strong>ผลประเมินนี้เป็นเครื่องมือช่วยติดตาม</strong> ไม่ใช่การวินิจฉัยโรค หากมีแผล บวม แดง ร้อน หรือปวดผิดปกติ กรุณาติดต่อแพทย์</p></div>
+}
+
+function requireCapturedPhotos(photos: Partial<Record<FootPosition, string>>): Record<FootPosition, string> {
+  const entries = examinationPositions.map((position) => {
+    const photo = photos[position]
+    if (!photo) throw new Error(`ยังไม่มีภาพ ${position}`)
+    return [position, photo] as const
+  })
+  return Object.fromEntries(entries) as Record<FootPosition, string>
 }
 
 function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStage, onHome, onCompleted }: { profile: Profile; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; stage: ExamStage; setStage: (stage: ExamStage) => void; onHome: () => void; onCompleted: (exam: Examination) => void }) {
@@ -555,7 +565,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       window.setTimeout(() => setProcessStep(3), 2300),
     ]
     const provider: FootAssessmentProvider = integrations.provider
-    const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
+    const capturedPhotos = requireCapturedPhotos(photos)
     const draftReadyJob = examinationIdRef.current ? Promise.resolve(true) : (draftJobRef.current ?? Promise.resolve(false))
     void Promise.all([draftReadyJob, photosToBlobs(capturedPhotos)]).then(([draftReady, images]) => {
       if (!draftReady) throw new Error('Could not initialize examination draft')
@@ -600,7 +610,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   const finalize = async () => {
     setIsFinalizing(true)
     setFinalizeError('')
-    const capturedPhotos = Object.fromEntries(examinationPositions.map((position) => [position, photos[position] ?? 'captured'])) as Record<FootPosition, string>
+    const capturedPhotos = requireCapturedPhotos(photos)
     const reviewChangedCount = confirmedFindings.reduce((count, finding) => {
       const aiFinding = aiFindings.find((item) => item.diseaseId === finding.diseaseId)
       return count + (aiFinding && (aiFinding.detected !== finding.detected || aiFinding.severity !== finding.severity) ? 1 : 0)
@@ -954,7 +964,7 @@ function SummaryReport({ examination, photos, diseaseRecords, onHome, onRestart 
       </section>
       <section className="summary-images"><div className="section-heading"><div><span className="eyebrow">ภาพจากการตรวจ</span><h2>ภาพเท้า 4 มุม</h2></div><span className="status-pill success"><CircleCheck size={15} />ครบ 4 ภาพ</span></div><div className="summary-photo-grid">{footSteps.map((step) => { const photo = photos[step.id]; return <div className="summary-photo" key={step.id} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>{!photo ? <Footprints size={26} /> : null}<span>{step.short}</span></div> })}</div></section>
       {findings.length ? <section className="summary-section"><div className="section-heading"><div><span className="eyebrow">ผลที่ยืนยันแล้ว</span><h2>รายการที่พบ</h2></div></div><div className="finding-list">{findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />)}</div></section> : <section className="no-finding-card"><CircleCheck size={24} /><div><h2>ยังไม่พบภาวะจากรายการที่ตรวจ</h2><p>ผลนี้ไม่ได้แปลว่าไม่มีโรคแน่นอน หากมีอาการผิดปกติ ให้เฝ้าระวังและติดต่อแพทย์</p></div></section>}
-      {comparisonFinding ? <section className="comparison-card"><div className="comparison-icon"><TrendingDown size={24} /></div><div><span className="eyebrow">เทียบกับครั้งก่อน</span><h2>{comparisonFinding.name} {comparisonFinding.comparison}</h2><p>ผลเปรียบเทียบจากการตรวจครั้งก่อน ควรติดตามตามคำแนะนำ</p></div></section> : null}
+      {comparisonFinding ? <section className="comparison-card"><div className="comparison-icon">{comparisonFinding.comparison === 'ดีขึ้น' ? <TrendingDown size={24} /> : <TrendingUp size={24} />}</div><div><span className="eyebrow">เทียบกับครั้งก่อน</span><h2>{comparisonFinding.name} {comparisonFinding.comparison}</h2><p>ผลเปรียบเทียบจากการตรวจครั้งก่อน ควรติดตามตามคำแนะนำ</p></div></section> : null}
       <section className="recommendation-card"><div className="section-heading"><div><span className="eyebrow">คำแนะนำ</span><h2>ดูแลต่อเนื่องหลังการตรวจ</h2></div><HeartPulse size={24} /></div><ul>{(recommendationLines.length ? recommendationLines : fallbackRecommendations).map((recommendation) => <li key={recommendation}><Check size={17} />{recommendation}</li>)}</ul></section>
       <ClinicalDisclaimer />
       <button className="button button-primary button-large" type="button" onClick={onHome}>กลับหน้าหลัก</button>
@@ -995,14 +1005,15 @@ function HistoryTab({ icon: Icon, label, value, active, onClick }: { icon: typeo
 function HistoryList({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
   return (
     <div className="history-content"><div className="history-summary-bar"><span><ClipboardCheck size={19} /><strong>ตรวจแล้ว {patientExaminations.length} ครั้ง</strong></span><small>ข้อมูลตั้งแต่ {patientExaminations.at(-1)?.displayDate ?? 'ยังไม่มีข้อมูล'}</small></div>{patientExaminations.length ? <div className="exam-list">
-      {patientExaminations.map((exam, index) => { const thumbnail = exam.thumbnails?.['left-dorsal']; return <article className="exam-card" key={exam.id}><div className="exam-date-block"><strong>{exam.displayDate.split(' ')[0]}</strong><span>{exam.displayDate.split(' ').slice(1).join(' ')}</span><small>{exam.time} น.</small></div><div className={thumbnail && thumbnail !== 'demo' ? 'exam-thumb has-image' : 'exam-thumb'} role={thumbnail && thumbnail !== 'demo' ? 'img' : undefined} aria-label={thumbnail && thumbnail !== 'demo' ? 'ภาพย่อจากการตรวจ' : undefined} style={thumbnail && thumbnail !== 'demo' ? { backgroundImage: `url(${thumbnail})` } : undefined}>{!thumbnail || thumbnail === 'demo' ? <Footprints size={30} /> : null}<span>4 ภาพ</span></div><div className="exam-findings"><span className="eyebrow">{index === 0 ? 'ล่าสุด' : exam.id}</span><h2>พบ {exam.findings.length} รายการ</h2><div>{exam.findings.map((finding) => <span key={finding.diseaseId} className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.name} · {finding.severity}</span>)}</div></div><button className="exam-open" type="button" onClick={() => onSelect(exam)} aria-label={`ดูผลวันที่ ${exam.displayDate}`}>ดูรายละเอียด<ChevronRight size={19} /></button></article> })}
+      {patientExaminations.map((exam, index) => { const thumbnail = exam.thumbnails?.['left-dorsal']; return <article className="exam-card" key={exam.id}><div className="exam-date-block"><strong>{exam.displayDate.split(' ')[0]}</strong><span>{exam.displayDate.split(' ').slice(1).join(' ')}</span><small>{exam.time} น.</small></div><div className={thumbnail ? 'exam-thumb has-image' : 'exam-thumb'} role={thumbnail ? 'img' : undefined} aria-label={thumbnail ? 'ภาพย่อจากการตรวจ' : undefined} style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}>{!thumbnail ? <Footprints size={30} /> : null}<span>4 ภาพ</span></div><div className="exam-findings"><span className="eyebrow">{index === 0 ? 'ล่าสุด' : exam.id}</span><h2>พบ {exam.findings.length} รายการ</h2><div>{exam.findings.map((finding) => <span key={finding.diseaseId} className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.name} · {finding.severity}</span>)}</div></div><button className="exam-open" type="button" onClick={() => onSelect(exam)} aria-label={`ดูผลวันที่ ${exam.displayDate}`}>ดูรายละเอียด<ChevronRight size={19} /></button></article> })}
     </div> : <div className="empty-state"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เริ่มตรวจเท้าครั้งแรกเพื่อดูผลย้อนหลังและแนวโน้มการเปลี่ยนแปลง</p></div>}</div>
   )
 }
 
 function HistoryCalendar({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
-  const [cursor, setCursor] = useState({ year: 2026, month: 7 })
-  const [selectedDay, setSelectedDay] = useState(8)
+  const initialCalendarDate = useMemo(() => { const raw = patientExaminations[0]?.date; const parsed = raw ? new Date(`${raw}T00:00:00`) : new Date(); return Number.isNaN(parsed.getTime()) ? new Date() : parsed }, [patientExaminations])
+  const [cursor, setCursor] = useState(() => ({ year: initialCalendarDate.getFullYear(), month: initialCalendarDate.getMonth() }))
+  const [selectedDay, setSelectedDay] = useState(() => initialCalendarDate.getDate())
   const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
   const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate()
   const firstDay = new Date(cursor.year, cursor.month, 1).getDay()
@@ -1081,7 +1092,7 @@ function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { 
     return () => { cancelled = true }
   }, [adminService, showToast])
   if (page === 'users') return <UserManagement users={userRecords} diseaseRecords={diseaseRecords} setUsers={setUserRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} />
-  if (page === 'diseases') return <DiseaseManagement diseases={diseaseRecords} setDiseases={setDiseaseRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} />
+  if (page === 'diseases') return <DiseaseManagement diseases={diseaseRecords} setDiseases={setDiseaseRecords} showToast={showToast} adminService={adminService} />
   if (page === 'admin-knowledge') return <KnowledgeManagement articles={knowledgeRecords} diseaseRecords={diseaseRecords} setArticles={setKnowledgeRecords} showToast={showToast} adminService={adminService} />
   return <DoctorHome onNavigate={setPage} users={userRecords} diseaseRecords={diseaseRecords} adminService={adminService} dashboard={dashboard} />
 }
@@ -1127,46 +1138,28 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
     const previousStatus = user.status
     const nextStatus = user.status === 'active' ? 'inactive' : 'active'
     setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
-    if (adminService) {
-      setPendingUserIds((current) => new Set(current).add(id))
-      void adminService.setUserStatus(id, nextStatus).then(() => {
-        void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
-        showToast(`${previousStatus === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
-      }).catch(() => {
-        setUsers((current) => current.map((item) => item.id === id ? { ...item, status: previousStatus } : item))
-        showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
-      }).finally(() => {
-        setPendingUserIds((current) => { const next = new Set(current); next.delete(id); return next })
-      })
-    }
+    setPendingUserIds((current) => new Set(current).add(id))
+    void adminService.setUserStatus(id, nextStatus).then(() => {
+      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
+      showToast(`${previousStatus === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
+    }).catch(() => {
+      setUsers((current) => current.map((item) => item.id === id ? { ...item, status: previousStatus } : item))
+      showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
+    }).finally(() => {
+      setPendingUserIds((current) => { const next = new Set(current); next.delete(id); return next })
+    })
   }
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveUser = async (draft: UserFormDraft) => {
-    if (adminService) {
-      try {
-        const saved = await adminService.saveUser(editing ? { ...draft, id: editing.id } : draft)
-        setUsers((current) => editing ? current.map((user) => user.id === editing.id ? saved : user) : [...current, saved])
-        void auditLogger?.append({ actorId: null, eventType: editing ? 'user_updated' : 'user_created', entityType: 'user', entityId: saved.id, payload: { username: saved.username, status: saved.status } }).catch(() => {})
-        showToast(`${editing ? 'บันทึกข้อมูล' : 'เพิ่มผู้ใช้'} ${saved.username} แล้ว`)
-        closeForm()
-      } catch {
-        showToast('บันทึกข้อมูลผู้ใช้ไม่สำเร็จ')
-      }
-      return
+    try {
+      const saved = await adminService.saveUser(editing ? { ...draft, id: editing.id } : draft)
+      setUsers((current) => editing ? current.map((user) => user.id === editing.id ? saved : user) : [...current, saved])
+      void auditLogger?.append({ actorId: null, eventType: editing ? 'user_updated' : 'user_created', entityType: 'user', entityId: saved.id, payload: { username: saved.username, status: saved.status } }).catch(() => {})
+      showToast(`${editing ? 'บันทึกข้อมูล' : 'เพิ่มผู้ใช้'} ${saved.username} แล้ว`)
+      closeForm()
+    } catch {
+      showToast('บันทึกข้อมูลผู้ใช้ไม่สำเร็จ')
     }
-    const { pin, ...safeDraft } = draft
-    void pin
-    if (editing) {
-      setUsers((current) => current.map((user) => user.id === editing.id ? { ...user, ...safeDraft } : user))
-      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: editing.id, payload: { username: safeDraft.username, status: safeDraft.status } }).catch(() => {})
-      showToast(`บันทึกข้อมูล ${safeDraft.username} แล้ว`)
-    } else {
-      const nextId = `USR-${String(users.length + 1).padStart(3, '0')}`
-      setUsers((current) => [...current, { ...safeDraft, id: nextId, lastExam: 'ยังไม่มีประวัติ' }])
-      void auditLogger?.append({ actorId: null, eventType: 'user_created', entityType: 'user', entityId: nextId, payload: { username: safeDraft.username, status: safeDraft.status } }).catch(() => {})
-      showToast(`เพิ่มผู้ใช้ ${safeDraft.username} แล้ว`)
-    }
-    closeForm()
   }
   return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id} data-pending={pendingUserIds.has(user.id) ? 'true' : undefined}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
 }
@@ -1182,7 +1175,7 @@ function UserHistoryModal({ user, diseaseRecords, adminService, onClose }: { use
 function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void> }) {
   const [draft, setDraft] = useState<Omit<UserRecord, 'id' | 'lastExam'> & { pin: string }>(() => user
     ? { username: user.username, name: user.name, dateOfBirth: user.dateOfBirth, age: calculateAge(user.dateOfBirth), occupation: user.occupation, pinConfigured: user.pinConfigured, status: user.status, pin: '' }
-    : { username: '', name: '', dateOfBirth: '1960-01-01', age: 0, occupation: '', pinConfigured: false, status: 'active', pin: '' })
+    : { username: '', name: '', dateOfBirth: '', age: 0, occupation: '', pinConfigured: false, status: 'active', pin: '' })
   const [isSaving, setIsSaving] = useState(false)
   const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
   const submit = async (event: React.FormEvent) => {
@@ -1201,7 +1194,7 @@ function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onC
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="user-form-title"><header><div><span className="eyebrow">{user ? 'แก้ไขบัญชี' : 'บัญชีใหม่'}</span><h2 id="user-form-title">{user ? `แก้ไข ${user.username}` : 'เพิ่มผู้ใช้งาน'}</h2><p>ข้อมูลนี้ใช้สำหรับกลุ่มทดลองและสามารถแก้ไขภายหลังได้</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="form-username">Username</label><input id="form-username" value={draft.username} onChange={(event) => update('username', event.target.value)} placeholder="เช่น DM005" autoComplete="off" /><label className="field-label" htmlFor="form-name">ชื่อ-นามสกุล</label><input id="form-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="ชื่อผู้ใช้งาน" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="form-dob">วันเดือนปีเกิด</label><input id="form-dob" type="date" value={draft.dateOfBirth} onChange={(event) => update('dateOfBirth', event.target.value)} /><div className="derived-metric"><span>อายุ / Generation</span><strong>{calculateAge(draft.dateOfBirth)} ปี · {calculateGeneration(draft.dateOfBirth)}</strong></div></div><div><label className="field-label" htmlFor="form-status">สถานะ</label><select id="form-status" value={draft.status} onChange={(event) => update('status', event.target.value as UserRecord['status'])}><option value="pending">รออนุมัติ</option><option value="active">เปิดใช้งาน</option><option value="inactive">ปิดใช้งาน</option></select></div></div><label className="field-label" htmlFor="form-occupation">อาชีพ</label><input id="form-occupation" value={draft.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="อาชีพ" /><label className="field-label" htmlFor="form-pin">PIN เริ่มต้น (4 หลัก){user ? ' · กรอกใหม่เมื่อเปลี่ยน PIN' : ''}</label><input id="form-pin" type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} value={draft.pin} onChange={(event) => update('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} placeholder={user ? 'เว้นว่างเพื่อใช้ PIN เดิม' : 'เช่น 1234'} autoComplete="new-password" /><small className="field-helper">ระบบจะไม่แสดงหรือเก็บ PIN ดิบในหน้าจอจัดการ หากต้องการเปลี่ยน PIN ให้กรอกเลขใหม่แล้วบันทึก</small><div className="admin-form-actions"><button className="button button-secondary" type="button" disabled={isSaving} onClick={onClose}>ยกเลิก</button><button className={isSaving ? 'button button-primary action-pending' : 'button button-primary'} type="submit" disabled={isSaving}>{isSaving ? 'กำลังบันทึก…' : 'บันทึกข้อมูล'}</button></div></form></section></div>
 }
 
-function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, adminService, auditLogger }: { diseases: Disease[]; setDiseases: React.Dispatch<React.SetStateAction<Disease[]>>; showToast: (text: string) => void; adminService?: AdminService; auditLogger?: AuditLogger }) {
+function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, adminService }: { diseases: Disease[]; setDiseases: React.Dispatch<React.SetStateAction<Disease[]>>; showToast: (text: string) => void; adminService: AdminService }) {
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<Disease | null>(null)
   const [creating, setCreating] = useState(false)
@@ -1214,45 +1207,27 @@ function DiseaseManagement({ diseases: diseaseRecords, setDiseases, showToast, a
     const previousActive = disease.active
     const nextActive = !previousActive
     setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: nextActive } : item))
-    if (adminService) {
-      setPendingDiseaseIds((current) => new Set(current).add(id))
-      void adminService.setDiseaseActive(id, nextActive).then(() => {
-        showToast(`${previousActive ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name} แล้ว`)
-      }).catch(() => {
-        setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: previousActive } : item))
-        showToast('เปลี่ยนสถานะ Disease ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
-      }).finally(() => {
-        setPendingDiseaseIds((current) => { const next = new Set(current); next.delete(id); return next })
-      })
-      return
-    }
-    void auditLogger?.append({ actorId: null, eventType: 'disease_master_updated', entityType: 'disease', entityId: id, payload: { action: 'status_changed', active: nextActive } }).catch(() => {})
+    setPendingDiseaseIds((current) => new Set(current).add(id))
+    void adminService.setDiseaseActive(id, nextActive).then(() => {
+      showToast(`${previousActive ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name} แล้ว`)
+    }).catch(() => {
+      setDiseases((current) => current.map((item) => item.id === id ? { ...item, active: previousActive } : item))
+      showToast('เปลี่ยนสถานะ Disease ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
+    }).finally(() => {
+      setPendingDiseaseIds((current) => { const next = new Set(current); next.delete(id); return next })
+    })
   }
   const openCreate = () => { setEditing(null); setCreating(true) }
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveDisease = async (draft: Omit<Disease, 'id'>) => {
-    if (adminService) {
-      try {
-        const saved = await adminService.saveDisease(editing ? { ...draft, id: editing.id } : draft)
-        setDiseases((current) => editing ? current.map((item) => item.id === editing.id ? saved : item) : [...current, saved])
-        showToast(`${editing ? 'บันทึกเกณฑ์' : 'เพิ่ม'} ${saved.name} แล้ว`)
-        closeForm()
-      } catch {
-        showToast('บันทึก Disease Master ไม่สำเร็จ')
-      }
-      return
+    try {
+      const saved = await adminService.saveDisease(editing ? { ...draft, id: editing.id } : draft)
+      setDiseases((current) => editing ? current.map((item) => item.id === editing.id ? saved : item) : [...current, saved])
+      showToast(`${editing ? 'บันทึกเกณฑ์' : 'เพิ่ม'} ${saved.name} แล้ว`)
+      closeForm()
+    } catch {
+      showToast('บันทึก Disease Master ไม่สำเร็จ')
     }
-    if (editing) {
-      setDiseases((current) => current.map((disease) => disease.id === editing.id ? { ...disease, ...draft } : disease))
-      void auditLogger?.append({ actorId: null, eventType: 'disease_master_updated', entityType: 'disease', entityId: editing.id, payload: { name: draft.name, active: draft.active } }).catch(() => {})
-      showToast(`บันทึกเกณฑ์ ${draft.name} แล้ว`)
-    } else {
-      const nextId = `D${String(diseaseRecords.length + 1).padStart(3, '0')}`
-      setDiseases((current) => [...current, { ...draft, id: nextId }])
-      void auditLogger?.append({ actorId: null, eventType: 'disease_master_created', entityType: 'disease', entityId: nextId, payload: { name: draft.name, active: draft.active } }).catch(() => {})
-      showToast(`เพิ่ม ${draft.name} แล้ว`)
-    }
-    closeForm()
   }
   return <div className="page admin-page"><PageTitle eyebrow="เกณฑ์การประเมิน" title="Disease Master" description="AI จะประเมินเฉพาะรายการที่เปิดใช้งานและตามเกณฑ์ที่ผู้ดูแลกำหนด" action={<button className="button button-primary" type="button" onClick={openCreate}><Plus size={18} />เพิ่มรายการ</button>} /><div className="master-alert"><ShieldCheck size={20} /><div><strong>ผู้ดูแลเป็นผู้ควบคุมรายการทั้งหมด</strong><p>AI ไม่มีสิทธิ์สร้างชื่อภาวะหรือระดับความรุนแรงใหม่</p></div></div><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหารายการภาวะ" placeholder="ค้นหาชื่อ รหัส หรือหมวดหมู่" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>เปิดใช้ {diseaseRecords.filter((item) => item.active).length} รายการ</span></div><div className="disease-grid">{filtered.map((disease) => <article className={disease.active ? '' : 'inactive'} key={disease.id} data-pending={pendingDiseaseIds.has(disease.id) ? 'true' : undefined}><header><span className="disease-code">{disease.id}</span><button className={disease.active ? 'toggle on' : 'toggle'} type="button" role="switch" aria-checked={disease.active} aria-label={`${disease.active ? 'ปิด' : 'เปิด'}ใช้งาน ${disease.name}`} disabled={pendingDiseaseIds.has(disease.id)} onClick={() => toggle(disease.id)}><span /></button></header><span className="category-label">{disease.category}</span><h2>{disease.name}</h2><p>{disease.description}</p><div className="criteria-box"><span>เกณฑ์ตรวจจับ</span><p>{disease.criteria}</p></div><div className="criteria-box"><span>เกณฑ์ระดับความรุนแรง</span>{getDiseaseSeverityLevels(disease).map((level) => <p key={level.label}><strong>{level.label}:</strong> {level.criteria || 'ยังไม่ได้ระบุเกณฑ์'}</p>)}</div><div className="disease-footer"><span className={`severity-label severity-${severityRank[disease.severity]}`}>สูงสุด: {disease.severity}</span><button type="button" onClick={() => { setCreating(false); setEditing(disease) }}>แก้ไขเกณฑ์ <ChevronRight size={16} /></button></div></article>)}</div>{creating || editing ? <DiseaseFormModal disease={editing} onClose={closeForm} onSave={saveDisease} /> : null}</div>
 }
@@ -1287,43 +1262,31 @@ function DiseaseFormModal({ disease, onClose, onSave }: { disease: Disease | nul
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="disease-form-title"><header><div><span className="eyebrow">{disease ? 'แก้ไขเกณฑ์' : 'รายการใหม่'}</span><h2 id="disease-form-title">{disease ? `แก้ไข ${disease.name}` : 'เพิ่มรายการภาวะ'}</h2><p>AI จะใช้รายการนี้เฉพาะเมื่อเปิดใช้งานและมีเกณฑ์ครบถ้วน</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="disease-name">ชื่อภาวะ</label><input id="disease-name" value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="เช่น ตาปลา" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="disease-category">หมวดหมู่</label><input id="disease-category" value={draft.category} onChange={(event) => update('category', event.target.value)} placeholder="เช่น ผิวหนัง" /></div><div><label className="field-label" htmlFor="disease-severity">ระดับสูงสุด</label><select id="disease-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as Severity)}>{severityOrder.map((label) => <option value={label} key={label}>{label}</option>)}</select></div></div><label className="field-label" htmlFor="disease-description">คำอธิบาย</label><textarea id="disease-description" value={draft.description} onChange={(event) => update('description', event.target.value)} placeholder="อธิบายภาวะให้ผู้ใช้เข้าใจ" /><label className="field-label" htmlFor="disease-criteria">เกณฑ์ตรวจจับ</label><textarea id="disease-criteria" value={draft.criteria} onChange={(event) => update('criteria', event.target.value)} placeholder="เกณฑ์ที่ AI ใช้ประเมิน" /><div className="severity-criteria-editor"><span className="field-label">เกณฑ์แต่ละระดับความรุนแรง</span><small className="field-helper">กำหนดเกณฑ์แยกตามระดับ เพื่อให้ AI ใช้ schema ของภาวะนี้เท่านั้น</small>{levels.map((level) => <label key={level.label} className="severity-criteria-row" htmlFor={`disease-severity-${level.rank}`}><span className={`severity-label severity-${level.rank}`}>{level.label}</span><textarea id={`disease-severity-${level.rank}`} value={level.criteria} onChange={(event) => updateSeverityCriteria(level.label, event.target.value)} placeholder={`เกณฑ์ระดับ${level.label}`} /></label>)}</div><label className="field-label" htmlFor="disease-care">คำแนะนำการดูแล</label><textarea id="disease-care" value={draft.care} onChange={(event) => update('care', event.target.value)} placeholder="คำแนะนำเมื่อพบภาวะนี้" /><label className="field-label" htmlFor="disease-recommendation">การรักษา / คำแนะนำเพิ่มเติม</label><textarea id="disease-recommendation" value={draft.recommendation} onChange={(event) => update('recommendation', event.target.value)} placeholder="เมื่อใดควรพบแพทย์ หรือแนวทางส่งต่อ" /><label className="field-label" htmlFor="disease-reference-image">รูปอ้างอิง</label><input id="disease-reference-image" type="file" accept="image/*" onChange={readReferenceImage} />{draft.referenceImage ? <img className="reference-image-preview" src={draft.referenceImage} alt="รูปอ้างอิงภาวะ" /> : <small className="field-helper">เมื่อบันทึก ระบบจะอัปโหลดรูปไปยังพื้นที่จัดเก็บส่วนตัวของ DM Foot Care</small>}<label className="form-switch"><input type="checkbox" checked={draft.active} onChange={(event) => update('active', event.target.checked)} /><span className={draft.active ? 'toggle on' : 'toggle'}><span /></span><span>เปิดส่งรายการนี้ให้ AI ประเมิน</span></label><div className="admin-form-actions"><button className="button button-secondary" type="button" disabled={isSaving} onClick={onClose}>ยกเลิก</button><button className={isSaving ? 'button button-primary action-pending' : 'button button-primary'} type="submit" disabled={isSaving}>{isSaving ? 'กำลังบันทึก…' : 'บันทึกเกณฑ์'}</button></div></form></section></div>
 }
 
-function KnowledgeManagement({ articles, diseaseRecords, setArticles, showToast, adminService }: { articles: KnowledgeArticle[]; diseaseRecords: Disease[]; setArticles: React.Dispatch<React.SetStateAction<KnowledgeArticle[]>>; showToast: (text: string) => void; adminService?: AdminService }) {
+function KnowledgeManagement({ articles, diseaseRecords, setArticles, showToast, adminService }: { articles: KnowledgeArticle[]; diseaseRecords: Disease[]; setArticles: React.Dispatch<React.SetStateAction<KnowledgeArticle[]>>; showToast: (text: string) => void; adminService: AdminService }) {
   const [editing, setEditing] = useState<KnowledgeArticle | null>(null)
   const [creating, setCreating] = useState(false)
   const publishedCount = articles.filter((article) => (article.status ?? 'published') === 'published').length
   const draftCount = articles.filter((article) => article.status === 'draft').length
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveArticle = async (draft: Omit<KnowledgeArticle, 'id'>) => {
-    if (adminService) {
-      try {
-        const saved = await adminService.saveKnowledge(editing ? { ...draft, id: editing.id } : draft)
-        setArticles((current) => editing ? current.map((article) => article.id === editing.id ? saved : article) : [...current, saved])
-        showToast(`${editing ? 'บันทึกบทความ' : 'สร้างบทความ'} “${saved.title}” แล้ว`)
-        closeForm()
-      } catch {
-        showToast('บันทึกบทความไม่สำเร็จ')
-      }
-      return
+    try {
+      const saved = await adminService.saveKnowledge(editing ? { ...draft, id: editing.id } : draft)
+      setArticles((current) => editing ? current.map((article) => article.id === editing.id ? saved : article) : [...current, saved])
+      showToast(`${editing ? 'บันทึกบทความ' : 'สร้างบทความ'} “${saved.title}” แล้ว`)
+      closeForm()
+    } catch {
+      showToast('บันทึกบทความไม่สำเร็จ')
     }
-    if (editing) {
-      setArticles((current) => current.map((article) => article.id === editing.id ? { ...article, ...draft } : article))
-      showToast(`บันทึกบทความ “${draft.title}” แล้ว`)
-    } else {
-      const nextId = `K${String(articles.length + 1).padStart(3, '0')}`
-      setArticles((current) => [...current, { ...draft, id: nextId }])
-      showToast(`สร้างบทความ “${draft.title}” แล้ว`)
-    }
-    closeForm()
   }
-  return <div className="page admin-page"><PageTitle eyebrow="เนื้อหาสำหรับผู้ใช้" title="จัดการคลังความรู้" description="บทความและคำแนะนำที่เชื่อมโยงกับผลตรวจ" action={<button className="button button-primary" type="button" onClick={() => { setEditing(null); setCreating(true) }}><Plus size={18} />สร้างบทความ</button>} /><div className="admin-stat-grid compact"><AdminStat icon={BookOpen} label="เผยแพร่แล้ว" value={String(publishedCount)} note="พร้อมให้ผู้ใช้อ่าน" tone="blue" /><AdminStat icon={Clock3} label="ฉบับร่าง" value={String(draftCount)} note="รอตรวจทาน" tone="amber" /><AdminStat icon={Eye} label="เปิดอ่านเดือนนี้" value="86" note="เพิ่มขึ้น 18%" tone="teal" /></div><div className="knowledge-admin-list">{articles.map((article) => { const status = article.status ?? 'published'; return <article key={article.id}><span className={`article-icon tone-${article.tone}`}><HeartPulse size={23} /></span><div><span className="category-label">{article.category}</span><h2>{article.title}</h2><p>{article.summary}</p></div><span className={status === 'published' ? 'status-pill success' : status === 'draft' ? 'status-pill attention' : 'status-pill muted'}>{status === 'published' ? 'เผยแพร่แล้ว' : status === 'draft' ? 'ฉบับร่าง' : 'เก็บถาวร'}</span><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(article) }}>แก้ไข</button></article> })}</div>{creating || editing ? <KnowledgeFormModal article={editing} diseases={diseaseRecords} onClose={closeForm} onSave={saveArticle} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="เนื้อหาสำหรับผู้ใช้" title="จัดการคลังความรู้" description="บทความและคำแนะนำที่เชื่อมโยงกับผลตรวจ" action={<button className="button button-primary" type="button" onClick={() => { setEditing(null); setCreating(true) }}><Plus size={18} />สร้างบทความ</button>} /><div className="admin-stat-grid compact"><AdminStat icon={BookOpen} label="เผยแพร่แล้ว" value={String(publishedCount)} note="พร้อมให้ผู้ใช้อ่าน" tone="blue" /><AdminStat icon={Clock3} label="ฉบับร่าง" value={String(draftCount)} note="รอตรวจทาน" tone="amber" /></div><div className="knowledge-admin-list">{articles.map((article) => { const status = article.status ?? 'published'; return <article key={article.id}><span className={`article-icon tone-${article.tone}`}><HeartPulse size={23} /></span><div><span className="category-label">{article.category}</span><h2>{article.title}</h2><p>{article.summary}</p></div><span className={status === 'published' ? 'status-pill success' : status === 'draft' ? 'status-pill attention' : 'status-pill muted'}>{status === 'published' ? 'เผยแพร่แล้ว' : status === 'draft' ? 'ฉบับร่าง' : 'เก็บถาวร'}</span><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(article) }}>แก้ไข</button></article> })}</div>{creating || editing ? <KnowledgeFormModal article={editing} diseases={diseaseRecords} onClose={closeForm} onSave={saveArticle} /> : null}</div>
 }
 
 function KnowledgeFormModal({ article, diseases: diseaseRecords, onClose, onSave }: { article: KnowledgeArticle | null; diseases: Disease[]; onClose: () => void; onSave: (draft: Omit<KnowledgeArticle, 'id'>) => void | Promise<void> }) {
-  const [draft, setDraft] = useState<Omit<KnowledgeArticle, 'id'>>(() => article ? { title: article.title, diseaseId: article.diseaseId, category: article.category, severity: article.severity, summary: article.summary, care: article.care, treatment: article.treatment, recommendation: article.recommendation, image: article.image, readTime: article.readTime, tone: article.tone, status: article.status ?? 'published' } : { title: '', diseaseId: '', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: '', care: ['', '', ''], treatment: '', recommendation: '', image: undefined, readTime: 'อ่าน 3 นาที', tone: 'blue', status: 'draft' })
+  const [draft, setDraft] = useState<Omit<KnowledgeArticle, 'id'>>(() => article ? { title: article.title, diseaseId: article.diseaseId, category: article.category, severity: article.severity, summary: article.summary, care: article.care, treatment: article.treatment, recommendation: article.recommendation, image: article.image, readTime: article.readTime, tone: article.tone, status: article.status ?? 'published' } : { title: '', diseaseId: '', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: '', care: ['', '', ''], treatment: '', recommendation: '', image: undefined, readTime: '', tone: 'blue', status: 'draft' })
   const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (!draft.title.trim() || !draft.category.trim() || !draft.summary.trim() || draft.care.filter((step) => step.trim()).length === 0) return; onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), summary: draft.summary.trim(), care: draft.care.map((step) => step.trim()).filter(Boolean) }) }
   const readImage = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => update('image', String(reader.result)); reader.readAsDataURL(file); event.target.value = '' }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="knowledge-form-title"><header><div><span className="eyebrow">{article ? 'แก้ไขบทความ' : 'บทความใหม่'}</span><h2 id="knowledge-form-title">{article ? `แก้ไข ${article.title}` : 'สร้างบทความ'}</h2><p>ตรวจทานภาษาและสถานะก่อนเผยแพร่ให้ผู้ใช้อ่าน</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="knowledge-title">ชื่อบทความ</label><input id="knowledge-title" value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="เช่น ดูแลเท้าเมื่อผิวแห้ง" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-disease">เชื่อมกับภาวะ</label><select id="knowledge-disease" value={draft.diseaseId ?? ''} onChange={(event) => update('diseaseId', event.target.value)}><option value="">ไม่ระบุ</option>{diseaseRecords.map((disease) => <option value={disease.id} key={disease.id}>{disease.id} · {disease.name}</option>)}</select></div><div><label className="field-label" htmlFor="knowledge-severity">ระดับ</label><select id="knowledge-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as KnowledgeArticle['severity'])}><option>ทุกระดับ</option><option>เล็กน้อย</option><option>ปานกลาง</option><option>รุนแรง</option></select></div></div><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-category">หมวดหมู่</label><input id="knowledge-category" value={draft.category} onChange={(event) => update('category', event.target.value)} /></div><div><label className="field-label" htmlFor="knowledge-status">สถานะ</label><select id="knowledge-status" value={draft.status} onChange={(event) => update('status', event.target.value as KnowledgeArticle['status'])}><option value="draft">ฉบับร่าง</option><option value="published">เผยแพร่แล้ว</option><option value="archived">เก็บถาวร</option></select></div></div><label className="field-label" htmlFor="knowledge-summary">สรุปสั้น</label><textarea id="knowledge-summary" value={draft.summary} onChange={(event) => update('summary', event.target.value)} placeholder="คำอธิบายที่แสดงบนการ์ด" /><label className="field-label" htmlFor="knowledge-care-1">ขั้นตอนการดูแล</label>{[0, 1, 2].map((index) => <input key={index} id={`knowledge-care-${index + 1}`} value={draft.care[index] ?? ''} onChange={(event) => update('care', draft.care.map((step, stepIndex) => stepIndex === index ? event.target.value : step))} placeholder={`ขั้นตอนที่ ${index + 1}`} />)}<label className="field-label" htmlFor="knowledge-treatment">การรักษา</label><textarea id="knowledge-treatment" value={draft.treatment ?? ''} onChange={(event) => update('treatment', event.target.value)} placeholder="แนวทางการรักษาหรือการส่งต่อ" /><label className="field-label" htmlFor="knowledge-recommendation">คำแนะนำเพิ่มเติม</label><textarea id="knowledge-recommendation" value={draft.recommendation ?? ''} onChange={(event) => update('recommendation', event.target.value)} placeholder="ข้อควรระวังหรือคำแนะนำสำหรับผู้ใช้" /><label className="field-label" htmlFor="knowledge-image">รูปประกอบ</label><input id="knowledge-image" type="file" accept="image/*" onChange={readImage} />{draft.image ? <img className="reference-image-preview" src={draft.image} alt="รูปประกอบบทความ" /> : <small className="field-helper">รูปจะถูกเก็บเป็น preview ใน prototype; production จะอัปโหลดไป storage ที่กำหนด</small>}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกบทความ</button></div></form></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="knowledge-form-title"><header><div><span className="eyebrow">{article ? 'แก้ไขบทความ' : 'บทความใหม่'}</span><h2 id="knowledge-form-title">{article ? `แก้ไข ${article.title}` : 'สร้างบทความ'}</h2><p>ตรวจทานภาษาและสถานะก่อนเผยแพร่ให้ผู้ใช้อ่าน</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="knowledge-title">ชื่อบทความ</label><input id="knowledge-title" value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="เช่น ดูแลเท้าเมื่อผิวแห้ง" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-disease">เชื่อมกับภาวะ</label><select id="knowledge-disease" value={draft.diseaseId ?? ''} onChange={(event) => update('diseaseId', event.target.value)}><option value="">ไม่ระบุ</option>{diseaseRecords.map((disease) => <option value={disease.id} key={disease.id}>{disease.id} · {disease.name}</option>)}</select></div><div><label className="field-label" htmlFor="knowledge-severity">ระดับ</label><select id="knowledge-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as KnowledgeArticle['severity'])}><option>ทุกระดับ</option><option>เล็กน้อย</option><option>ปานกลาง</option><option>รุนแรง</option></select></div></div><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-category">หมวดหมู่</label><input id="knowledge-category" value={draft.category} onChange={(event) => update('category', event.target.value)} /></div><div><label className="field-label" htmlFor="knowledge-status">สถานะ</label><select id="knowledge-status" value={draft.status} onChange={(event) => update('status', event.target.value as KnowledgeArticle['status'])}><option value="draft">ฉบับร่าง</option><option value="published">เผยแพร่แล้ว</option><option value="archived">เก็บถาวร</option></select></div></div><label className="field-label" htmlFor="knowledge-summary">สรุปสั้น</label><textarea id="knowledge-summary" value={draft.summary} onChange={(event) => update('summary', event.target.value)} placeholder="คำอธิบายที่แสดงบนการ์ด" /><label className="field-label" htmlFor="knowledge-care-1">ขั้นตอนการดูแล</label>{[0, 1, 2].map((index) => <input key={index} id={`knowledge-care-${index + 1}`} value={draft.care[index] ?? ''} onChange={(event) => update('care', draft.care.map((step, stepIndex) => stepIndex === index ? event.target.value : step))} placeholder={`ขั้นตอนที่ ${index + 1}`} />)}<label className="field-label" htmlFor="knowledge-treatment">การรักษา</label><textarea id="knowledge-treatment" value={draft.treatment ?? ''} onChange={(event) => update('treatment', event.target.value)} placeholder="แนวทางการรักษาหรือการส่งต่อ" /><label className="field-label" htmlFor="knowledge-recommendation">คำแนะนำเพิ่มเติม</label><textarea id="knowledge-recommendation" value={draft.recommendation ?? ''} onChange={(event) => update('recommendation', event.target.value)} placeholder="ข้อควรระวังหรือคำแนะนำสำหรับผู้ใช้" /><label className="field-label" htmlFor="knowledge-image">รูปประกอบ</label><input id="knowledge-image" type="file" accept="image/*" onChange={readImage} />{draft.image ? <img className="reference-image-preview" src={draft.image} alt="รูปประกอบบทความ" /> : <small className="field-helper">เมื่อบันทึก ระบบจะอัปโหลดรูปไปยังพื้นที่จัดเก็บส่วนตัวของ DM Foot Care</small>}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกบทความ</button></div></form></section></div>
 }
 
 export default App
