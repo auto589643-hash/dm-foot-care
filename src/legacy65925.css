@@ -219,3 +219,6 @@
   .confirm-actions { grid-template-columns: 1fr; }
   .confirm-actions .button { width: 100%; min-height: 52px; }
 }
+
+.lifecycle-status-readonly { min-height: 50px; justify-content: center; }
+.lifecycle-status-readonly strong { color: #10233f; }
