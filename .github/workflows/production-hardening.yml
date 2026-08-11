@@ -23,8 +23,11 @@ jobs:
       - run: npm ci
       - run: node scripts/normalize_hardening_script.mjs
       - run: node scripts/apply_production_hardening.mjs
+      - run: node scripts/fix_hardening_lint.mjs
       - run: npm run lint
       - run: npm run build
+      - run: npm run test:ai
+      - run: npm run test:security
       - name: Commit generated hardening changes
         run: |
           git config user.name "github-actions[bot]"
