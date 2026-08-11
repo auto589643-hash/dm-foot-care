@@ -12,6 +12,7 @@ import authRegister from '../backend/api/v1/auth/register.mjs'
 import drafts from '../backend/api/v1/examinations/drafts.mjs'
 import analysisRuns from '../backend/api/v1/examinations/[id]/analysis-runs.mjs'
 import confirmedFindings from '../backend/api/v1/examinations/[id]/confirmed-findings.mjs'
+import finalizeExamination from '../backend/api/v1/examinations/[id]/finalize.mjs'
 import examinationImages from '../backend/api/v1/examinations/[id]/images.mjs'
 import examinationImagePosition from '../backend/api/v1/examinations/[id]/images/[position].mjs'
 import examinationStatus from '../backend/api/v1/examinations/[id]/status.mjs'
@@ -97,10 +98,10 @@ export default async function handler(req, res) {
     withParams(req, { userId: decodeURIComponent(match[1]), action: match[2] || '' })
     return adminUser(req, res)
   }
-  match = path.match(/^v1\/examinations\/([^/]+)\/(analysis-runs|confirmed-findings|status|thumbnail-references|thumbnails)$/)
+  match = path.match(/^v1\/examinations\/([^/]+)\/(analysis-runs|confirmed-findings|finalize|status|thumbnail-references|thumbnails)$/)
   if (match) {
     withParams(req, { id: decodeURIComponent(match[1]) })
-    const handlers = { 'analysis-runs': analysisRuns, 'confirmed-findings': confirmedFindings, status: examinationStatus, 'thumbnail-references': thumbnailReferences, thumbnails }
+    const handlers = { 'analysis-runs': analysisRuns, 'confirmed-findings': confirmedFindings, finalize: finalizeExamination, status: examinationStatus, 'thumbnail-references': thumbnailReferences, thumbnails }
     return handlers[match[2]](req, res)
   }
   match = path.match(/^v1\/examinations\/([^/]+)\/images$/)
