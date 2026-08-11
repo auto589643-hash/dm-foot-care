@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - name: Apply App codemod
         run: node scripts/indexeddb-draft-codemod.mjs
-      - name: Verify after IndexedDB typing fix
+      - name: Verify IndexedDB draft migration
         run: npm run verify
       - name: Commit clean IndexedDB implementation
         run: |
