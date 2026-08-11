@@ -1,6 +1,5 @@
-import crypto from 'node:crypto'
 import { handleOptions, readJsonBody, sendJson, setCors } from '../../_lib/http.mjs'
-import { requireAdminUser, supabaseConfig, supabaseRest } from '../../_lib/supabase.mjs'
+import { internalAuthEmail, internalAuthPassword, requireAdminUser, supabaseConfig, supabaseRest } from '../../_lib/supabase.mjs'
 
 const USERNAME_PATTERN = /^[A-Z0-9_-]{3,32}$/
 const PIN_PATTERN = /^\d{4}$/
@@ -58,8 +57,8 @@ async function createAuthUser(username) {
     method: 'POST',
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      email: `${username.toLowerCase()}@dmfc.local`,
-      password: crypto.randomBytes(32).toString('base64url'),
+      email: internalAuthEmail(username),
+      password: internalAuthPassword(username),
       email_confirm: true,
       user_metadata: { username },
     }),
