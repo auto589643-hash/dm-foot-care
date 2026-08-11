@@ -11,6 +11,13 @@ export interface AuthService {
 export interface OriginalImageArchive {
   createPrivateExaminationFolder(username: string, examinationId: string, examinedAt?: string): Promise<string>
   uploadOriginal(folderId: string, position: FootPosition, image: Blob): Promise<string>
+  uploadOriginalWithReference?(input: {
+    folderId: string
+    examinationId: string
+    position: FootPosition
+    image: Blob
+    metadata: Record<string, unknown>
+  }): Promise<string>
 }
 
 export interface FootAssessmentProvider {
@@ -66,6 +73,15 @@ export interface ExaminationRepository {
     diseaseId: string
     severity: Severity | null
     aiFindingId?: string
+    confirmedBy: string
+  }): Promise<void>
+  saveConfirmedFindings?(input: {
+    examinationId: string
+    findings: Array<{
+      diseaseId: string
+      severity: Severity | null
+      aiFindingId?: string
+    }>
     confirmedBy: string
   }): Promise<void>
   saveThumbnailReferences(input: {
