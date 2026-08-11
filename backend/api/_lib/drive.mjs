@@ -2,6 +2,30 @@ import crypto from 'node:crypto'
 
 let cachedToken = null
 let cachedTokenExpiresAt = 0
+let cachedRootFolderId = null
+let cachedRootFolderExpiresAt = 0
+const DRIVE_CACHE_TTL_MS = 10 * 60_000
+const DRIVE_CACHE_MAX_ENTRIES = 512
+const childFolderCache = new Map()
+const metadataCache = new Map()
+
+function cacheGet(cache, key) {
+  const entry = cache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key)
+    return null
+  }
+  return entry.value
+}
+
+function cacheSet(cache, key, value) {
+  if (cache.size >= DRIVE_CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next().value
+    if (oldest) cache.delete(oldest)
+  }
+  cache.set(key, { value, expiresAt: Date.now() + DRIVE_CACHE_TTL_MS })
+}
 
 function serviceAccountCredentials() {
   const raw = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
@@ -42,7 +66,7 @@ async function accessToken() {
     const signer = crypto.createSign('RSA-SHA256')
     signer.update(unsigned)
     const assertion = `${unsigned}.${base64Url(signer.sign(serviceAccount.private_key))}`
-    body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion })
+    body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth-type:jwt-bearer', assertion })
   }
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -80,10 +104,13 @@ function driveUrl(path, params = {}) {
 export async function findRootFolder() {
   const explicit = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || process.env.GOOGLE_DRIVE_FOLDER_ID
   if (explicit) return explicit
+  if (cachedRootFolderId && cachedRootFolderExpiresAt > Date.now()) return cachedRootFolderId
   const query = "name = 'DMFC Program' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
   const response = await driveFetch(driveUrl('/files', { q: query, fields: 'files(id,name)', pageSize: '10', includeItemsFromAllDrives: 'true' }))
   const payload = await response.json()
-  return payload.files?.[0]?.id || null
+  cachedRootFolderId = payload.files?.[0]?.id || null
+  cachedRootFolderExpiresAt = Date.now() + DRIVE_CACHE_TTL_MS
+  return cachedRootFolderId
 }
 
 export async function createFolder(name, parentId = null, appProperties = undefined) {
@@ -94,17 +121,31 @@ export async function createFolder(name, parentId = null, appProperties = undefi
     ...(appProperties ? { appProperties } : {}),
   }
   const response = await driveFetch(driveUrl('/files', { fields: 'id,name,parents,appProperties' }), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-  return response.json()
+  const folder = await response.json()
+  if (parentId) cacheSet(childFolderCache, `${parentId}:${name}`, folder)
+  if (folder?.id) cacheSet(metadataCache, folder.id, { ...folder, mimeType: 'application/vnd.google-apps.folder' })
+  return folder
 }
 
 export async function findChildFolder(parentId, name) {
+  const cacheKey = `${parentId}:${name}`
+  const cached = cacheGet(childFolderCache, cacheKey)
+  if (cached) return cached
   const query = `name = '${escapeDriveQuery(name)}' and '${escapeDriveQuery(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
   const response = await driveFetch(driveUrl('/files', { q: query, fields: 'files(id,name,parents,appProperties)', pageSize: '10', includeItemsFromAllDrives: 'true' }))
   const payload = await response.json()
-  return payload.files?.[0] || null
+  const folder = payload.files?.[0] || null
+  if (folder) {
+    cacheSet(childFolderCache, cacheKey, folder)
+    if (folder.id) cacheSet(metadataCache, folder.id, { ...folder, mimeType: 'application/vnd.google-apps.folder' })
+  }
+  return folder
 }
 
 export async function findOrCreateFolder(parentId, name, appProperties = undefined) {
+  const cacheKey = `${parentId}:${name}`
+  const cached = cacheGet(childFolderCache, cacheKey)
+  if (cached) return cached
   const existing = await findChildFolder(parentId, name)
   return existing || createFolder(name, parentId, appProperties)
 }
@@ -125,8 +166,12 @@ export async function uploadFile(folderId, filename, mimeType, data) {
 }
 
 export async function getFileMetadata(fileId) {
+  const cached = cacheGet(metadataCache, fileId)
+  if (cached) return cached
   const response = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { fields: 'id,name,mimeType,parents,appProperties' }))
-  return response.json()
+  const metadata = await response.json()
+  cacheSet(metadataCache, fileId, metadata)
+  return metadata
 }
 
 export async function downloadThumbnail(fileId) {
