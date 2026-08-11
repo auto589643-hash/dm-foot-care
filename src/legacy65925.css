@@ -1,0 +1,159 @@
+/* DM Foot Care — preferred visual language from commit 65925ee.
+   This layer restores visual treatment only. Current data, auth, backend and
+   production-hardening logic remain unchanged. */
+
+.app-shell {
+  --ink: #10233f;
+  --muted: #62748a;
+  --helper: #8998aa;
+  --line: #dce5ef;
+  --background: #f5f8fc;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-sm: 0 1px 2px rgba(16, 35, 63, .04), 0 4px 12px rgba(16, 35, 63, .04);
+  --shadow-md: 0 2px 4px rgba(16, 35, 63, .04), 0 12px 32px rgba(16, 35, 63, .08);
+  color: var(--ink);
+  background: var(--background);
+}
+
+.app-shell h1,
+.app-shell h2,
+.app-shell h3,
+.app-shell h4 { color: var(--ink); }
+
+.app-shell .content-card,
+.app-shell .admin-panel,
+.app-shell .calendar-card,
+.app-shell .calendar-side,
+.app-shell .trend-card,
+.app-shell .insight-list,
+.app-shell .stat-card,
+.app-shell .exam-card {
+  border-radius: var(--radius-md);
+  border-color: var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Home hero: restore the high-contrast 65925ee treatment. */
+.app-shell .scan-hero {
+  min-height: 310px;
+  border-radius: var(--radius-lg);
+  color: #fff;
+  background: #154eb8;
+  box-shadow: 0 16px 38px rgba(23, 75, 174, .18);
+}
+.app-shell .scan-hero h1,
+.app-shell .scan-hero h2,
+.app-shell .scan-hero h3,
+.app-shell .scan-hero h4 { color: #fff; }
+.app-shell .hero-kicker { color: #d8e7ff; }
+.app-shell .scan-copy { padding: 36px clamp(28px, 4vw, 52px); }
+.app-shell .scan-copy h2 {
+  margin-top: 16px;
+  max-width: 580px;
+  color: #fff;
+  font-size: clamp(26px, 3vw, 38px);
+  line-height: 1.25;
+  letter-spacing: -.035em;
+}
+.app-shell .scan-copy p {
+  max-width: 590px;
+  margin-top: 12px;
+  color: #dce9ff;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.app-shell .scan-copy small { color: #c7daf8; }
+
+.app-shell .button-hero {
+  width: min(100%, 430px);
+  min-width: 230px;
+  min-height: 74px;
+  margin-top: 23px;
+  padding: 16px 26px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 16px;
+  color: #164baa;
+  background: #fff;
+  font-size: 21px;
+  box-shadow: 0 8px 22px rgba(3,25,74,.2);
+}
+.app-shell .button-hero svg:first-child { width: 27px; height: 27px; }
+.app-shell .button-hero:hover {
+  color: #fff;
+  background: #174bb8;
+}
+
+.app-shell .welcome-row h1 { font-size: 32px; line-height: 1.15; }
+.app-shell .welcome-row p { color: var(--muted); font-size: 15px; }
+.app-shell .profile-facts span { color: var(--muted); font-size: 13px; }
+.app-shell .profile-facts b { color: var(--ink); }
+
+/* Authentication validation: precise, visible, and attached to the field. */
+.field-error-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  color: #b4232f;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.field-error-text::before {
+  content: '•';
+  flex: 0 0 auto;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.input-wrap.input-error,
+.registration-form input.input-error {
+  border-color: #d92d3a !important;
+  background: #fffafa;
+  box-shadow: 0 0 0 3px rgba(217,45,58,.10) !important;
+}
+.input-wrap.input-error svg { color: #b4232f; }
+.form-error {
+  border-color: #f0b7bd;
+  color: #9f1f2a;
+  background: #fff0f1;
+}
+
+@media (max-width: 900px) {
+  .app-shell .scan-hero { grid-template-columns: 1fr; }
+  .app-shell .scan-copy { padding: 30px 26px; }
+  .app-shell .scan-copy p { max-width: 75%; }
+}
+
+@media (max-width: 600px) {
+  .app-shell .welcome-row h1 { font-size: 27px; }
+  .app-shell .welcome-row p { font-size: 13px; }
+  .app-shell .scan-hero { min-height: 355px; border-radius: 20px; }
+  .app-shell .scan-copy { padding: 27px 23px; }
+  .app-shell .scan-copy h2 {
+    max-width: 92%;
+    color: #fff;
+    font-size: 27px;
+  }
+  .app-shell .scan-copy p { max-width: 90%; font-size: 13px; }
+  .app-shell .button-hero {
+    width: 100%;
+    min-width: 0;
+    min-height: 78px;
+    margin-top: 21px;
+    font-size: 20px;
+  }
+  .app-shell .scan-copy small { justify-content: center; }
+  .field-error-text { font-size: 13px; }
+}
+
+@media (max-width: 360px) {
+  .app-shell .scan-copy { padding: 22px 18px; }
+  .app-shell .scan-copy h2 { max-width: 100%; font-size: 24px; }
+  .app-shell .scan-copy p { max-width: 100%; font-size: 13px; }
+  .app-shell .button-hero { min-height: 72px; font-size: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .button-hero { transition-duration: .01ms !important; }
+}
