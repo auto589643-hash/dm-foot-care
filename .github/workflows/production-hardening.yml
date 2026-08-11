@@ -21,14 +21,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node scripts/normalize_hardening_script.mjs
-      - run: node scripts/apply_production_hardening.mjs
-      - run: node scripts/fix_hardening_lint.mjs
+      - run: node scripts/finalize_no_mock_runtime.mjs
       - run: npm run lint
       - run: npm run build
       - run: npm run test:ai
       - run: npm run test:security
-      - name: Commit generated hardening changes
+      - name: Commit final runtime cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -36,6 +34,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No generated changes"
           else
-            git commit -m "Remove runtime mocks and connect real data surfaces"
+            git commit -m "Remove final runtime mock remnants"
             git push origin HEAD:fix/remove-mocks-production-hardening
           fi
