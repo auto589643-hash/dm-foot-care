@@ -34,13 +34,21 @@ export async function finalizeExamination(input: FinalizeExaminationInput): Prom
   const { examinationId, images, thumbnailService, repository, confirmedFindings = [], confirmedBy, auditLogger, actorId, reviewChangedCount = 0, precomputedThumbnails } = input
   try {
     await repository.updateStatus(examinationId, 'thumbnailing')
-    if (confirmedBy) {
-      await Promise.all(confirmedFindings.map((finding) => repository.saveConfirmedFinding({
-        examinationId,
-        diseaseId: finding.diseaseId,
-        severity: finding.severity,
-        confirmedBy,
-      })))
+    if (confirmedBy && confirmedFindings.length) {
+      if (repository.saveConfirmedFindings) {
+        await repository.saveConfirmedFindings({
+          examinationId,
+          confirmedBy,
+          findings: confirmedFindings.map((finding) => ({ diseaseId: finding.diseaseId, severity: finding.severity })),
+        })
+      } else {
+        await Promise.all(confirmedFindings.map((finding) => repository.saveConfirmedFinding({
+          examinationId,
+          diseaseId: finding.diseaseId,
+          severity: finding.severity,
+          confirmedBy,
+        })))
+      }
     }
     const thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
     await repository.saveThumbnailReferences({ examinationId, thumbnails })
