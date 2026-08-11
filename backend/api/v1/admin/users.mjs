@@ -82,12 +82,14 @@ async function deleteAuthUser(userId) {
   })
 }
 
-export async function listUsers() {
-  const [profiles, examinations, roles] = await Promise.all([
-    supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
-    supabaseRest('/rest/v1/examinations?select=user_id,examined_at,created_at&order=created_at.desc'),
-    supabaseRest('/rest/v1/user_roles?select=user_id,role'),
-  ])
+export async function listUsers(sourceRows) {
+  const [profiles, examinations, roles] = sourceRows
+    ? [sourceRows.profiles, sourceRows.examinations, sourceRows.roles]
+    : await Promise.all([
+      supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
+      supabaseRest('/rest/v1/examinations?select=user_id,examined_at,created_at&order=created_at.desc'),
+      supabaseRest('/rest/v1/user_roles?select=user_id,role'),
+    ])
   const userIds = new Set(roles.filter((item) => item.role === 'user' || item.role === 'patient').map((item) => item.user_id))
   const latestByUser = new Map()
   for (const row of examinations) if (!latestByUser.has(row.user_id)) latestByUser.set(row.user_id, row.examined_at || row.created_at)
