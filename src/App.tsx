@@ -254,21 +254,35 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
   const [registration, setRegistration] = useState({ username: '', displayName: '', dateOfBirth: '', occupation: '', pin: '', confirmPin: '' })
   const [registrationComplete, setRegistrationComplete] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      return next
+    })
+  }
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
     const normalizedUsername = username.trim().toUpperCase()
-    if (!normalizedUsername || pin.length !== 4) {
-      setError('กรุณากรอกชื่อผู้ใช้และ PIN 4 หลักให้ครบ')
-      return
-    }
+    const nextErrors: Record<string, string> = {}
+    if (!normalizedUsername) nextErrors.loginUsername = 'กรุณากรอกชื่อผู้ใช้'
+    else if (!/^[A-Z0-9_-]{3,32}$/.test(normalizedUsername)) nextErrors.loginUsername = 'ชื่อผู้ใช้ต้องมี 3–32 ตัว และใช้ A-Z, 0-9, _ หรือ - เท่านั้น'
+    if (!pin) nextErrors.loginPin = 'กรุณากรอก PIN 4 หลัก'
+    else if (!/^\d{4}$/.test(pin)) nextErrors.loginPin = 'PIN ต้องเป็นตัวเลข 4 หลัก'
+    setFieldErrors(nextErrors)
+    if (Object.keys(nextErrors).length) return
+
     setSubmitting(true)
     try {
       onLogin(await authService.signInWithUsername(normalizedUsername, pin))
-    } catch {
-      setError('เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลหรือลองใหม่อีกครั้ง')
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message ? caught.message : 'เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลหรือลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
@@ -278,26 +292,47 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
     event.preventDefault()
     setError('')
     const normalizedUsername = registration.username.trim().toUpperCase()
-    if (!normalizedUsername || !registration.displayName.trim() || !registration.dateOfBirth || !registration.occupation.trim()) {
-      setError('กรุณากรอกข้อมูลลงทะเบียนให้ครบทุกช่อง')
-      return
+    const nextErrors: Record<string, string> = {}
+    if (!normalizedUsername) nextErrors.registerUsername = 'กรุณากำหนด Username'
+    else if (!/^[A-Z0-9_-]{3,32}$/.test(normalizedUsername)) nextErrors.registerUsername = 'ใช้ A-Z, 0-9, _ หรือ - จำนวน 3–32 ตัวเท่านั้น'
+    if (!registration.displayName.trim()) nextErrors.displayName = 'กรุณากรอกชื่อ-นามสกุล'
+    if (!registration.dateOfBirth) nextErrors.dateOfBirth = 'กรุณาเลือกวันเดือนปีเกิด'
+    else {
+      const birthDate = new Date(`${registration.dateOfBirth}T00:00:00Z`)
+      if (Number.isNaN(birthDate.getTime()) || birthDate > new Date()) nextErrors.dateOfBirth = 'วันเดือนปีเกิดไม่ถูกต้อง'
     }
-    if (!/^\d{4}$/.test(registration.pin) || registration.pin !== registration.confirmPin) {
-      setError('กรุณากรอก PIN 4 หลักให้ตรงกันทั้งสองช่อง')
-      return
-    }
+    if (!registration.occupation.trim()) nextErrors.occupation = 'กรุณากรอกอาชีพ'
+    if (!/^\d{4}$/.test(registration.pin)) nextErrors.registerPin = 'PIN ต้องเป็นตัวเลข 4 หลัก'
+    if (!registration.confirmPin) nextErrors.confirmPin = 'กรุณายืนยัน PIN อีกครั้ง'
+    else if (registration.pin !== registration.confirmPin) nextErrors.confirmPin = 'PIN ทั้งสองช่องไม่ตรงกัน'
+    setFieldErrors(nextErrors)
+    if (Object.keys(nextErrors).length) return
+
     setSubmitting(true)
     try {
       await authService.register({ username: normalizedUsername, displayName: registration.displayName.trim(), dateOfBirth: registration.dateOfBirth, occupation: registration.occupation.trim(), pin: registration.pin })
+      setFieldErrors({})
       setRegistrationComplete(true)
-    } catch {
-      setError('ลงทะเบียนไม่สำเร็จ กรุณาตรวจสอบ Username หรือลองใหม่อีกครั้ง')
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message ? caught.message : 'ลงทะเบียนไม่สำเร็จ กรุณาตรวจสอบข้อมูลแล้วลองใหม่อีกครั้ง')
     } finally {
       setSubmitting(false)
     }
   }
 
-  const updateRegistration = (key: keyof typeof registration, value: string) => setRegistration((current) => ({ ...current, [key]: value }))
+  const updateRegistration = (key: keyof typeof registration, value: string) => {
+    setRegistration((current) => ({ ...current, [key]: value }))
+    const map: Record<keyof typeof registration, string> = {
+      username: 'registerUsername',
+      displayName: 'displayName',
+      dateOfBirth: 'dateOfBirth',
+      occupation: 'occupation',
+      pin: 'registerPin',
+      confirmPin: 'confirmPin',
+    }
+    clearFieldError(map[key])
+    if (error) setError('')
+  }
 
   return (
     <main className="login-page">
@@ -305,7 +340,7 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
         <aside className="login-visual"><div className="brand brand-on-blue"><BrandMark /><span>DM Foot Care</span></div><div className="login-visual-copy"><span className="eyebrow">ดูแลอย่างต่อเนื่อง</span><h1>ติดตามสุขภาพเท้า<br />ได้ง่ายในทุกครั้ง</h1><p>บันทึกภาพ ตรวจสอบ และติดตามผลย้อนหลังในระบบเดียว</p></div><FourFrameIllustration /></aside>
         <div className="mobile-login-brand brand login-brand-lockup"><BrandMark /><span>DM Foot Care</span></div>
         <div className="login-form-wrap">
-          {mode === 'login' ? <><div className="login-heading"><span className="eyebrow">ยินดีต้อนรับ</span><h2>เข้าสู่ระบบ</h2><p>กรอกชื่อผู้ใช้และ PIN ของคุณ</p></div><form onSubmit={handleLogin} noValidate><label className="field-label" htmlFor="username">ชื่อผู้ใช้</label><div className="input-wrap"><UserRound size={20} /><input id="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="เช่น DM001" /></div><label className="field-label" htmlFor="pin">PIN 4 หลัก</label><div className="input-wrap"><ShieldCheck size={20} /><input id="pin" inputMode="numeric" autoComplete="current-password" maxLength={4} type="password" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} placeholder="••••" /></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('register'); setError('') }}>ยังไม่มีบัญชี? ลงทะเบียนใช้งาน</button><p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" autoComplete="username" value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" /><label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" autoComplete="name" value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} /><div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" type="date" value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} /></div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} /></div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} /></div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError('') }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
+          {mode === 'login' ? <><div className="login-heading"><span className="eyebrow">ยินดีต้อนรับ</span><h2>เข้าสู่ระบบ</h2><p>กรอกชื่อผู้ใช้และ PIN ของคุณ</p></div><form onSubmit={handleLogin} noValidate><label className="field-label" htmlFor="username">ชื่อผู้ใช้</label><div className={fieldErrors.loginUsername ? "input-wrap input-error" : "input-wrap"}><UserRound size={20} /><input id="username" autoComplete="username" aria-invalid={Boolean(fieldErrors.loginUsername)} aria-describedby={fieldErrors.loginUsername ? "login-username-error" : undefined} value={username} onChange={(event) => { setUsername(event.target.value); clearFieldError("loginUsername"); if (error) setError("") }} placeholder="เช่น DM001" /></div>{fieldErrors.loginUsername ? <div id="login-username-error" className="field-error-text">{fieldErrors.loginUsername}</div> : null}<label className="field-label" htmlFor="pin">PIN 4 หลัก</label><div className={fieldErrors.loginPin ? "input-wrap input-error" : "input-wrap"}><ShieldCheck size={20} /><input id="pin" inputMode="numeric" autoComplete="current-password" maxLength={4} type="password" aria-invalid={Boolean(fieldErrors.loginPin)} aria-describedby={fieldErrors.loginPin ? "login-pin-error" : undefined} value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, '')); clearFieldError("loginPin"); if (error) setError("") }} placeholder="••••" /></div>{fieldErrors.loginPin ? <div id="login-pin-error" className="field-error-text">{fieldErrors.loginPin}</div> : null}{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังเข้าสู่ระบบ…' : <>เข้าสู่ระบบ <ArrowRight size={20} /></>}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('register'); setError(''); setFieldErrors({}) }}>ยังไม่มีบัญชี? ลงทะเบียนใช้งาน</button><p className="login-support">มีปัญหาในการเข้าสู่ระบบ? ติดต่อผู้ดูแลระบบ</p></> : registrationComplete ? <div className="registration-success"><CircleCheck size={42} /><span className="eyebrow">ลงทะเบียนสำเร็จ</span><h2>รอ Admin อนุมัติบัญชี</h2><p>เมื่อบัญชีได้รับอนุมัติแล้ว คุณจะเข้าสู่ระบบด้วย Username และ PIN ที่ตั้งไว้ได้</p><button className="button button-primary button-large" type="button" onClick={() => { setUsername(registration.username.trim().toUpperCase()); setMode('login'); setRegistrationComplete(false); setError('') }}>กลับไปหน้าเข้าสู่ระบบ</button></div> : <><div className="login-heading"><span className="eyebrow">บัญชีใหม่</span><h2>ลงทะเบียนใช้งาน</h2><p>กรอกข้อมูลให้ครบ แล้วรอ Admin อนุมัติบัญชี</p></div><form className="registration-form" onSubmit={handleRegister} noValidate><label className="field-label" htmlFor="register-username">Username</label><input id="register-username" className={fieldErrors.registerUsername ? "input-error" : undefined} autoComplete="username" aria-invalid={Boolean(fieldErrors.registerUsername)} aria-describedby={fieldErrors.registerUsername ? "register-username-error" : undefined} value={registration.username} onChange={(event) => updateRegistration('username', event.target.value)} placeholder="ใช้ A-Z, 0-9, _ หรือ -" />{fieldErrors.registerUsername ? <div id="register-username-error" className="field-error-text">{fieldErrors.registerUsername}</div> : null}<label className="field-label" htmlFor="register-name">ชื่อ-นามสกุล</label><input id="register-name" className={fieldErrors.displayName ? "input-error" : undefined} autoComplete="name" aria-invalid={Boolean(fieldErrors.displayName)} aria-describedby={fieldErrors.displayName ? "register-name-error" : undefined} value={registration.displayName} onChange={(event) => updateRegistration('displayName', event.target.value)} />{fieldErrors.displayName ? <div id="register-name-error" className="field-error-text">{fieldErrors.displayName}</div> : null}<div className="registration-grid"><div><label className="field-label" htmlFor="register-dob">วันเดือนปีเกิด</label><input id="register-dob" className={fieldErrors.dateOfBirth ? "input-error" : undefined} type="date" aria-invalid={Boolean(fieldErrors.dateOfBirth)} aria-describedby={fieldErrors.dateOfBirth ? "register-dob-error" : undefined} value={registration.dateOfBirth} onChange={(event) => updateRegistration('dateOfBirth', event.target.value)} />{fieldErrors.dateOfBirth ? <div id="register-dob-error" className="field-error-text">{fieldErrors.dateOfBirth}</div> : null}</div><div><label className="field-label" htmlFor="register-occupation">อาชีพ</label><input id="register-occupation" className={fieldErrors.occupation ? "input-error" : undefined} aria-invalid={Boolean(fieldErrors.occupation)} aria-describedby={fieldErrors.occupation ? "register-occupation-error" : undefined} value={registration.occupation} onChange={(event) => updateRegistration('occupation', event.target.value)} />{fieldErrors.occupation ? <div id="register-occupation-error" className="field-error-text">{fieldErrors.occupation}</div> : null}</div></div><div className="registration-grid"><div><label className="field-label" htmlFor="register-pin">ตั้ง PIN 4 หลัก</label><input id="register-pin" className={fieldErrors.registerPin ? "input-error" : undefined} type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.registerPin)} aria-describedby={fieldErrors.registerPin ? "register-pin-error" : undefined} value={registration.pin} onChange={(event) => updateRegistration('pin', event.target.value.replace(/\D/g, '').slice(0, 4))} />{fieldErrors.registerPin ? <div id="register-pin-error" className="field-error-text">{fieldErrors.registerPin}</div> : null}</div><div><label className="field-label" htmlFor="register-confirm-pin">ยืนยัน PIN</label><input id="register-confirm-pin" className={fieldErrors.confirmPin ? "input-error" : undefined} type="password" inputMode="numeric" maxLength={4} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirmPin)} aria-describedby={fieldErrors.confirmPin ? "register-confirm-pin-error" : undefined} value={registration.confirmPin} onChange={(event) => updateRegistration('confirmPin', event.target.value.replace(/\D/g, '').slice(0, 4))} />{fieldErrors.confirmPin ? <div id="register-confirm-pin-error" className="field-error-text">{fieldErrors.confirmPin}</div> : null}</div></div>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<button className={submitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล…' : 'ส่งคำขอลงทะเบียน'}</button></form><button className="login-mode-switch" type="button" onClick={() => { setMode('login'); setError(''); setFieldErrors({}) }}>มีบัญชีแล้ว? กลับไปเข้าสู่ระบบ</button></>}
         </div>
       </section>
     </main>
