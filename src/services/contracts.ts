@@ -1,7 +1,6 @@
-import type { Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
+import type { AdminDashboard, Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
 import type { AiValidationResult } from './aiValidator.ts'
 
-/** Client-safe boundary. Production implementation calls a backend username mapping endpoint. */
 export interface AuthService {
   signInWithUsername(username: string, pin: string): Promise<Profile>
   register(input: RegistrationInput): Promise<void>
@@ -9,13 +8,11 @@ export interface AuthService {
   restoreSession(): Promise<Profile | null>
 }
 
-/** Original image uploads must be implemented server-side; never send Drive credentials to this client. */
 export interface OriginalImageArchive {
   createPrivateExaminationFolder(username: string, examinationId: string, examinedAt?: string): Promise<string>
   uploadOriginal(folderId: string, position: FootPosition, image: Blob): Promise<string>
 }
 
-/** Provider-neutral AI adapter. Backend must validate disease IDs and structured output. */
 export interface FootAssessmentProvider {
   analyze(input: {
     examinationId: string
@@ -41,10 +38,8 @@ export interface ExaminationDraft {
   status: 'draft' | 'uploading' | 'analyzing' | 'awaiting_review' | 'thumbnailing' | 'confirmed' | 'analysis_failed' | 'thumbnail_failed'
 }
 
-/** Persistence boundary for the resumable examination pipeline. */
 export interface ExaminationRepository {
   createDraft(userId: string): Promise<ExaminationDraft>
-  /** Optional read boundary used by the production patient Home/History screens. */
   listForCurrentUser?(): Promise<Examination[]>
   getImageReferences(examinationId: string): Promise<{
     driveFolderId: string | null
@@ -80,17 +75,18 @@ export interface ExaminationRepository {
   updateStatus(examinationId: string, status: ExaminationDraft['status']): Promise<void>
 }
 
-/** Published patient-facing content plus the disease labels used by filters. */
 export interface KnowledgeLibraryService {
   listPublished(): Promise<{ articles: KnowledgeArticle[]; diseases: Disease[] }>
+  listSavedArticleIds(): Promise<string[]>
+  setSaved(articleId: string, saved: boolean): Promise<void>
 }
 
-/** Read-only staff boundary. Mutations stay behind privileged backend endpoints. */
 export interface AdminReadService {
   listUsers(): Promise<UserRecord[]>
   listUserExaminations(userId: string): Promise<Examination[]>
   listDiseases(): Promise<Disease[]>
   listKnowledge(): Promise<KnowledgeArticle[]>
+  getDashboard(): Promise<AdminDashboard>
 }
 
 export type AdminUserWriteInput = Omit<UserRecord, 'id' | 'age' | 'lastExam' | 'pinConfigured'> & { id?: string; pin?: string }
