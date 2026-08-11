@@ -20,12 +20,15 @@ export default async function handler(req, res) {
     try { filename = decodeURIComponent(rawFilename) } catch { return sendJson(res, 400, { message: 'Image filename is invalid' }) }
     if (!folderId || !validPositions.has(position)) return sendJson(res, 400, { message: 'Drive folder and valid image position are required' })
 
-    const folder = await getFileMetadata(folderId)
+    const ownershipCheck = examinationId
+      ? supabaseRest(`/rest/v1/examinations?select=id&id=eq.${encodeURIComponent(examinationId)}&user_id=eq.${encodeURIComponent(session.user.id)}&limit=1`)
+      : Promise.resolve(null)
+    const [folder, ownedExaminations] = await Promise.all([getFileMetadata(folderId), ownershipCheck])
     if (folder.mimeType !== 'application/vnd.google-apps.folder' || folder.appProperties?.dmfcOwnerUserId !== session.user.id) {
       return sendJson(res, 403, { message: 'ไม่มีสิทธิ์เขียนโฟลเดอร์นี้' })
     }
-    if (examinationId && folder.appProperties?.dmfcExaminationId !== examinationId) {
-      return sendJson(res, 403, { message: 'โฟลเดอร์นี้ไม่ตรงกับรายการตรวจ' })
+    if (examinationId && !ownedExaminations?.[0]) {
+      return sendJson(res, 403, { message: 'ไม่มีสิทธิ์บันทึกรูปในรายการตรวจนี้' })
     }
 
     const data = await readBinaryBody(req)
