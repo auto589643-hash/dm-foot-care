@@ -307,18 +307,18 @@ export class HttpExaminationRepository implements ExaminationRepository {
 
 export class HttpKnowledgeLibraryService implements KnowledgeLibraryService {
   private readonly client: BackendHttpClient
-
-  constructor(client: BackendHttpClient) {
-    this.client = client
-  }
-
+  constructor(client: BackendHttpClient) { this.client = client }
   async listPublished(): Promise<{ articles: import('../types.ts').KnowledgeArticle[]; diseases: import('../types.ts').Disease[] }> {
-    const response = await this.client.get<{
-      articles?: import('../types.ts').KnowledgeArticle[]
-      diseases?: import('../types.ts').Disease[]
-    } | import('../types.ts').KnowledgeArticle[]>('/v1/knowledge')
+    const response = await this.client.get<{ articles?: import('../types.ts').KnowledgeArticle[]; diseases?: import('../types.ts').Disease[] } | import('../types.ts').KnowledgeArticle[]>('/v1/knowledge')
     if (Array.isArray(response)) return { articles: response, diseases: [] }
     return { articles: response.articles ?? [], diseases: normalizeDiseaseList(response.diseases) }
+  }
+  async listSavedArticleIds(): Promise<string[]> {
+    const response = await this.client.get<{ articleIds?: string[] }>('/v1/knowledge/saved')
+    return Array.isArray(response.articleIds) ? response.articleIds : []
+  }
+  async setSaved(articleId: string, saved: boolean): Promise<void> {
+    await this.client.postJson('/v1/knowledge/saved', { articleId, saved })
   }
 }
 
@@ -327,6 +327,10 @@ export class HttpAdminService implements AdminService {
 
   constructor(client: BackendHttpClient) {
     this.client = client
+  }
+
+  async getDashboard(): Promise<import('../types.ts').AdminDashboard> {
+    return this.client.get('/v1/admin/dashboard')
   }
 
   async listUsers(): Promise<import('../types.ts').UserRecord[]> {

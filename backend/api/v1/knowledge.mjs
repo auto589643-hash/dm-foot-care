@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     const [articles, diseases, levels] = await Promise.all([
       supabaseRest('/rest/v1/knowledge_articles?select=id,disease_id,category,severity_id,title,summary,body,image_path,status&status=eq.published&order=updated_at.desc'),
       supabaseRest('/rest/v1/diseases?select=id,code,name,category,description,detection_criteria,care_instruction,recommendation,reference_image_path,active,revision&active=eq.true&order=code'),
-      supabaseRest('/rest/v1/disease_severity_levels?select=disease_id,label,rank,criteria&order=rank'),
+      supabaseRest('/rest/v1/disease_severity_levels?select=id,disease_id,label,rank,criteria&order=rank'),
     ])
     const diseaseById = new Map(diseases.map((disease) => [disease.id, disease]))
     const levelsByDisease = new Map()
