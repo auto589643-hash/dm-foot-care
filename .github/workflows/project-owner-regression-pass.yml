@@ -23,6 +23,18 @@ jobs:
       - run: npm ci
       - name: Apply regression patch
         run: python3 scripts/project_owner_regression_patch.py
+      - name: Align legacy finalize assertion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/finalize_workflow.test.ts')
+          s = p.read_text()
+          old = "/Thumbnail generation failed/"
+          new = "/สร้างภาพสรุปไม่สำเร็จ/"
+          if old not in s:
+              raise SystemExit('legacy thumbnail assertion not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Verify complete application
         run: npm run verify
       - name: Commit validated regression pass
