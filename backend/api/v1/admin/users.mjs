@@ -83,7 +83,7 @@ async function deleteAuthUser(userId) {
   })
 }
 
-async function listUsers() {
+export async function listUsers() {
   const [profiles, examinations, roles] = await Promise.all([
     supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
     supabaseRest('/rest/v1/examinations?select=user_id,examined_at,created_at&order=created_at.desc'),

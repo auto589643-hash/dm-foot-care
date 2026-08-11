@@ -140,7 +140,11 @@ export async function downloadThumbnail(fileId) {
   return { data, mimeType: response.headers.get('content-type') || 'image/jpeg' }
 }
 
+export async function openFileResponse(fileId) {
+  return driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }))
+}
+
 export async function downloadFile(fileId) {
-  const response = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }))
+  const response = await openFileResponse(fileId)
   return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type') || 'application/octet-stream' }
 }

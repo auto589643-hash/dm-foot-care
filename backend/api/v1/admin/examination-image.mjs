@@ -1,4 +1,5 @@
-import { downloadThumbnail } from '../../_lib/drive.mjs'
+import { Readable } from 'node:stream'
+import { downloadThumbnail, openFileResponse } from '../../_lib/drive.mjs'
 import { handleOptions, sendJson, setCors } from '../../_lib/http.mjs'
 import { createStorageSignedUrl, requireAdminUser, supabaseRest, supabaseStorage } from '../../_lib/supabase.mjs'
 
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
 
     const examinationId = String(queryParam(req, 'examinationId') || '')
     const position = String(queryParam(req, 'position') || '')
+    const variant = String(queryParam(req, 'variant') || 'preview')
     const dbPosition = positionMap.get(position)
     if (!isUuid(examinationId) || !dbPosition) return sendJson(res, 400, { message: 'ข้อมูลรูปตรวจไม่ถูกต้อง' })
 
@@ -45,6 +47,20 @@ export default async function handler(req, res) {
     const images = await supabaseRest(`/rest/v1/examination_images?select=examination_id,position,drive_file_id,thumbnail_path&examination_id=eq.${encodeURIComponent(examinationId)}&position=eq.${encodeURIComponent(dbPosition)}&limit=1`)
     const image = images[0]
     if (!image) return sendJson(res, 404, { message: 'ไม่พบรูปในมุมที่เลือก' })
+
+    if (variant === 'original') {
+      if (!image.drive_file_id) return sendJson(res, 404, { message: 'ไม่พบไฟล์ต้นฉบับของรูปนี้' })
+      const original = await openFileResponse(image.drive_file_id)
+      const mimeType = original.headers.get('content-type') || 'application/octet-stream'
+      if (!mimeType.startsWith('image/')) return sendJson(res, 422, { message: 'ไฟล์ต้นฉบับไม่ใช่รูปภาพ' })
+      res.statusCode = 200
+      res.setHeader('Content-Type', mimeType)
+      res.setHeader('Cache-Control', 'private, no-store')
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      if (!original.body) { res.end(); return }
+      Readable.fromWeb(original.body).pipe(res)
+      return
+    }
 
     if (image.thumbnail_path) {
       return sendJson(res, 200, { url: await createStorageSignedUrl('dm-foot-thumbnails', image.thumbnail_path), cached: true })

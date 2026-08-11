@@ -63,6 +63,31 @@ export class BackendHttpClient {
     return this.request<T>(path, { method: 'GET' })
   }
 
+  async getBlob(path: string, timeoutMs = 90_000): Promise<Blob> {
+    const url = new URL(path.replace(/^\//, ''), this.baseUrl)
+    const controller = new AbortController()
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs)
+    const headers = new Headers({ accept: 'image/*' })
+    const accessToken = await this.getAccessToken?.()
+    if (accessToken) headers.set('authorization', `Bearer ${accessToken}`)
+    try {
+      const response = await this.fetchImpl(url, { method: 'GET', headers, signal: controller.signal, credentials: 'include' })
+      if (!response.ok) {
+        const raw = await response.text()
+        const payload = parseResponse(raw)
+        const message = typeof payload === 'object' && payload !== null && 'message' in payload && typeof payload.message === 'string' ? payload.message : `Backend request failed (${response.status})`
+        throw new HttpIntegrationError(message, response.status, payload)
+      }
+      return response.blob()
+    } catch (error) {
+      if (error instanceof HttpIntegrationError) throw error
+      if (error instanceof DOMException && error.name === 'AbortError') throw new HttpIntegrationError('Backend request timed out', 408)
+      throw error
+    } finally {
+      globalThis.clearTimeout(timeoutId)
+    }
+  }
+
   async postJson<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
     return this.request<T>(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }, timeoutMs)
   }
@@ -333,6 +358,11 @@ export class HttpAdminService implements AdminService {
     this.client = client
   }
 
+  async getBootstrap(): Promise<{ users: import('../types.ts').UserRecord[]; diseases: import('../types.ts').Disease[]; articles: import('../types.ts').KnowledgeArticle[]; dashboard: import('../types.ts').AdminDashboard | null; partial: boolean }> {
+    const response = await this.client.get<{ users?: import('../types.ts').UserRecord[]; diseases?: unknown; articles?: import('../types.ts').KnowledgeArticle[]; dashboard?: import('../types.ts').AdminDashboard | null; partial?: boolean }>('/v1/admin/bootstrap')
+    return { users: response.users ?? [], diseases: normalizeDiseaseList(response.diseases), articles: response.articles ?? [], dashboard: response.dashboard ?? null, partial: Boolean(response.partial) }
+  }
+
   async getDashboard(): Promise<import('../types.ts').AdminDashboard> {
     return this.client.get('/v1/admin/dashboard')
   }
@@ -343,6 +373,15 @@ export class HttpAdminService implements AdminService {
 
   async listUserExaminations(userId: string): Promise<import('../types.ts').Examination[]> {
     return readArrayResponse(await this.client.get<import('../types.ts').Examination[] | { examinations?: import('../types.ts').Examination[] }>(`/v1/admin/users/${encodeURIComponent(userId)}/examinations`), 'examinations')
+  }
+
+  async getExaminationThumbnails(examinationId: string): Promise<Partial<Record<FootPosition, string>>> {
+    const response = await this.client.get<{ thumbnails?: Partial<Record<FootPosition, string>> }>(`/v1/admin/examinations/${encodeURIComponent(examinationId)}/thumbnails`)
+    return response.thumbnails ?? {}
+  }
+
+  async getExaminationOriginalImage(examinationId: string, position: FootPosition): Promise<Blob> {
+    return this.client.getBlob(`/v1/admin/examinations/${encodeURIComponent(examinationId)}/images/${encodeURIComponent(position)}?variant=original`)
   }
 
   async getExaminationImage(examinationId: string, position: FootPosition): Promise<string> {

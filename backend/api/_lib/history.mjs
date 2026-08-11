@@ -42,7 +42,8 @@ function comparisonFor(currentSeverity, previousSeverity) {
 }
 
 /** Hydrates each examination with findings, real historical comparisons, and private thumbnail URLs. */
-export async function hydrateExaminationHistory(examinations) {
+export async function hydrateExaminationHistory(examinations, options = {}) {
+  const { includeThumbnails = true } = options
   if (!examinations.length) return []
   const ids = examinations.map((row) => row.id).join(',')
   const [findings, images] = await Promise.all([
@@ -64,16 +65,18 @@ export async function hydrateExaminationHistory(examinations) {
   }
 
   const thumbnailsByExam = new Map()
-  await Promise.all(images.filter((image) => image.thumbnail_path).map(async (image) => {
-    try {
-      const url = await createStorageSignedUrl('dm-foot-thumbnails', image.thumbnail_path)
-      const thumbnails = thumbnailsByExam.get(image.examination_id) || {}
-      thumbnails[image.position.replace('_', '-')] = url
-      thumbnailsByExam.set(image.examination_id, thumbnails)
-    } catch (error) {
-      console.warn('history thumbnail signing skipped', image.examination_id, image.position, error instanceof Error ? error.message : error)
-    }
-  }))
+  if (includeThumbnails) {
+    await Promise.all(images.filter((image) => image.thumbnail_path).map(async (image) => {
+      try {
+        const url = await createStorageSignedUrl('dm-foot-thumbnails', image.thumbnail_path)
+        const thumbnails = thumbnailsByExam.get(image.examination_id) || {}
+        thumbnails[image.position.replace('_', '-')] = url
+        thumbnailsByExam.set(image.examination_id, thumbnails)
+      } catch (error) {
+        console.warn('history thumbnail signing skipped', image.examination_id, image.position, error instanceof Error ? error.message : error)
+      }
+    }))
+  }
 
   const hydrated = examinations.map((row) => {
     const at = row.examined_at || row.created_at

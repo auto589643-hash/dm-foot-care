@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
     const examinations = await supabaseRest(`/rest/v1/examinations?select=id,examination_code,status,examined_at,created_at&user_id=eq.${encodeURIComponent(userId)}&order=examined_at.desc.nullslast,created_at.desc`)
     if (!examinations.length) return sendJson(res, 200, { examinations: [] })
-    return sendJson(res, 200, { examinations: await hydrateExaminationHistory(examinations) })
+    return sendJson(res, 200, { examinations: await hydrateExaminationHistory(examinations, { includeThumbnails: false }) })
   } catch (error) {
     console.error('admin user examinations read failed', error)
     return sendJson(res, 500, { message: 'ไม่สามารถโหลดประวัติการตรวจได้' })

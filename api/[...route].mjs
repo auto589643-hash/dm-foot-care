@@ -22,7 +22,9 @@ import adminUsers from '../backend/api/v1/admin/users.mjs'
 import adminDiseases from '../backend/api/v1/admin/diseases.mjs'
 import adminKnowledge from '../backend/api/v1/admin/knowledge.mjs'
 import adminDashboard from '../backend/api/v1/admin/dashboard.mjs'
+import adminBootstrap from '../backend/api/v1/admin/bootstrap.mjs'
 import adminUserExaminations from '../backend/api/v1/admin/user-examinations.mjs'
+import adminExaminationThumbnails from '../backend/api/v1/admin/examination-thumbnails.mjs'
 import adminExaminationImage from '../backend/api/v1/admin/examination-image.mjs'
 import adminUser from '../backend/api/v1/admin/user.mjs'
 import { sendJson } from '../backend/api/_lib/http.mjs'
@@ -58,6 +60,7 @@ export default async function handler(req, res) {
   if (path === 'v1/admin/diseases') return adminDiseases(req, res)
   if (path === 'v1/admin/knowledge') return adminKnowledge(req, res)
   if (path === 'v1/admin/dashboard') return adminDashboard(req, res)
+  if (path === 'v1/admin/bootstrap') return adminBootstrap(req, res)
 
   let match = path.match(/^v1\/admin\/diseases\/([^/]+)(?:\/(status))?$/)
   if (match) {
@@ -73,6 +76,11 @@ export default async function handler(req, res) {
   if (match) {
     withParams(req, { id: decodeURIComponent(match[1]), position: decodeURIComponent(match[2]) })
     return examinationImagePosition(req, res)
+  }
+  match = path.match(/^v1\/admin\/examinations\/([^/]+)\/thumbnails$/)
+  if (match) {
+    withParams(req, { examinationId: decodeURIComponent(match[1]) })
+    return adminExaminationThumbnails(req, res)
   }
   match = path.match(/^v1\/admin\/users\/([^/]+)\/examinations$/)
   if (match) {

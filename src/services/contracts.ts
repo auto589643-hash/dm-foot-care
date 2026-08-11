@@ -82,8 +82,11 @@ export interface KnowledgeLibraryService {
 }
 
 export interface AdminReadService {
+  getBootstrap(): Promise<{ users: UserRecord[]; diseases: Disease[]; articles: KnowledgeArticle[]; dashboard: AdminDashboard | null; partial: boolean }>
   listUsers(): Promise<UserRecord[]>
   listUserExaminations(userId: string): Promise<Examination[]>
+  getExaminationThumbnails(examinationId: string): Promise<Partial<Record<FootPosition, string>>>
+  getExaminationOriginalImage(examinationId: string, position: FootPosition): Promise<Blob>
   getExaminationImage(examinationId: string, position: FootPosition): Promise<string>
   listDiseases(): Promise<Disease[]>
   listKnowledge(): Promise<KnowledgeArticle[]>

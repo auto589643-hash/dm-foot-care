@@ -150,7 +150,7 @@ async function loadLevels(diseaseId) {
   return supabaseRest(`/rest/v1/disease_severity_levels?select=id,disease_id,label,rank,criteria&disease_id=eq.${encodeURIComponent(diseaseId)}&order=rank`)
 }
 
-async function listDiseases() {
+export async function listDiseases() {
   const [diseases, levels] = await Promise.all([
     supabaseRest('/rest/v1/diseases?select=id,code,name,category,description,detection_criteria,care_instruction,recommendation,reference_image_path,active,revision&order=code'),
     supabaseRest('/rest/v1/disease_severity_levels?select=disease_id,label,rank,criteria&order=rank'),

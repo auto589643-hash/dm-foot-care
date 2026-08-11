@@ -128,7 +128,7 @@ async function normalizeInput(body, lookups) {
   }
 }
 
-async function listArticles() {
+export async function listArticles() {
   const [rows, lookups] = await Promise.all([
     supabaseRest('/rest/v1/knowledge_articles?select=id,disease_id,category,severity_id,title,summary,body,image_path,status,created_at,updated_at&order=updated_at.desc'),
     loadLookups(),
