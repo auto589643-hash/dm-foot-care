@@ -256,6 +256,25 @@
 
 /* Project-owner regression contract: mobile dashboard intrinsic-width containment. */
 .app-shell { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; }
+.main-content,
+.admin-dashboard-page,
+.admin-dashboard-page .admin-stat-grid,
+.admin-dashboard-page .admin-grid,
+.admin-dashboard-page .admin-panel,
+.admin-dashboard-page .followup-list,
+.admin-dashboard-page .activity-chart,
+.admin-dashboard-page .chart-legend,
+.admin-dashboard-page .section-heading {
+  min-width: 0;
+  max-width: 100%;
+}
+.admin-dashboard-page,
+.admin-dashboard-page .admin-stat-grid,
+.admin-dashboard-page .admin-grid,
+.admin-dashboard-page .admin-panel,
+.admin-dashboard-page .followup-list,
+.admin-dashboard-page .activity-chart { width: 100%; }
+.admin-dashboard-page { overflow-x: clip; }
 @media (max-width: 900px) {
   .app-column,
   .top-bar,

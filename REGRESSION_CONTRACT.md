@@ -10,6 +10,8 @@ Before changing production behavior, evaluate the full dependency chain rather t
 - A persistence/finalization failure is not a thumbnail failure; retain a retryable examination state.
 - The optimized lifecycle may finalize `awaiting_review -> confirmed` because thumbnails are produced before human review.
 - Patient and Admin historical image viewing use thumbnails first; original Drive images are fetched only on explicit full-image open.
+- A successful HTTP response is not sufficient for multi-system writes; verify the required storage/database post-condition before reporting success.
+- Thumbnail persistence must be linked to an existing examination image row; both early-thumbnail and normal ordering remain safe.
 - Mobile layouts must tolerate long Thai text, browser text scaling and intrinsic-width content without widening the app shell.
 - A Git commit is not released until the Production deployment SHA matches it and health/runtime checks pass.
 

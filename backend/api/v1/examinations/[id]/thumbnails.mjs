@@ -33,11 +33,14 @@ export default async function handler(req, res) {
         headers: { 'content-type': mimeType, 'x-upsert': 'true', 'cache-control': '31536000' },
         body: bytes,
       })
-      await supabaseRest(`/rest/v1/examination_images?examination_id=eq.${encodeURIComponent(examinationId)}&position=eq.${encodeURIComponent(position.replace('-', '_'))}`, {
+      const linkedRows = await supabaseRest(`/rest/v1/examination_images?examination_id=eq.${encodeURIComponent(examinationId)}&position=eq.${encodeURIComponent(position.replace('-', '_'))}`, {
         method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
+        headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ thumbnail_path: path, thumbnail_metadata: { mimeType, generatedAt: new Date().toISOString() } }),
       })
+      if (!Array.isArray(linkedRows) || linkedRows.length !== 1) {
+        throw new Error(`Thumbnail uploaded but image reference is missing for ${position}`)
+      }
       const signedUrl = await createStorageSignedUrl('dm-foot-thumbnails', path)
       return [position, signedUrl]
     }))
