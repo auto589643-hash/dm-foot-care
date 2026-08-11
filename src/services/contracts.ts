@@ -84,6 +84,7 @@ export interface KnowledgeLibraryService {
 export interface AdminReadService {
   listUsers(): Promise<UserRecord[]>
   listUserExaminations(userId: string): Promise<Examination[]>
+  getExaminationImage(examinationId: string, position: FootPosition): Promise<string>
   listDiseases(): Promise<Disease[]>
   listKnowledge(): Promise<KnowledgeArticle[]>
   getDashboard(): Promise<AdminDashboard>
