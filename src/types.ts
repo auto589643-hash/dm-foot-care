@@ -2,6 +2,7 @@ export type Role = 'user' | 'admin'
 export type Page = 'home' | 'exam' | 'history' | 'knowledge' | 'admin-home' | 'users' | 'diseases' | 'admin-knowledge'
 export type Severity = 'เล็กน้อย' | 'ปานกลาง' | 'รุนแรง'
 export type FootPosition = 'left-dorsal' | 'left-sole' | 'right-dorsal' | 'right-sole'
+export type FindingComparison = 'ดีขึ้น' | 'คงที่' | 'ควรติดตาม' | 'แย่ลง' | 'ยังไม่มีข้อมูลเปรียบเทียบ'
 
 export interface Profile {
   id: string
@@ -28,7 +29,6 @@ export interface Disease {
   criteria: string
   severityCriteria: string
   severity: Severity
-  /** Structured per-disease severity schema; the text field remains for API/backward compatibility. */
   severityLevels?: DiseaseSeverityLevel[]
   care: string
   recommendation: string
@@ -42,7 +42,7 @@ export interface Finding {
   detected: boolean
   severity: Severity
   confidence: number
-  comparison: 'ดีขึ้น' | 'คงที่' | 'ควรติดตาม' | 'แย่ลง'
+  comparison: FindingComparison
 }
 
 export interface Examination {
@@ -81,6 +81,39 @@ export interface UserRecord {
   pinConfigured: boolean
   status: 'pending' | 'active' | 'inactive'
   lastExam: string
+}
+
+export interface AdminDashboardFollowup {
+  userId: string
+  username: string
+  name: string
+  issue: string
+  time: string
+  severe: boolean
+}
+
+export interface AdminDashboardRecentExam {
+  examinationId: string
+  userId: string
+  username: string
+  name: string
+  displayDate: string
+  findings: string[]
+  status: 'success' | 'attention' | 'danger'
+}
+
+export interface AdminDashboard {
+  activeUsers: number
+  totalUsers: number
+  usersWithHistory: number
+  followupCount: number
+  severeCount: number
+  completedLast7Days: number
+  averagePerDay: number
+  activityLast7Days: { key: string; label: string; count: number }[]
+  latestExam: { displayDate: string; username: string } | null
+  followups: AdminDashboardFollowup[]
+  recentExaminations: AdminDashboardRecentExam[]
 }
 
 export interface RegistrationInput {

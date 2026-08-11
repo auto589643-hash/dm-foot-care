@@ -1,6 +1,6 @@
 # DM Foot Care
 
-Functional frontend prototype สำหรับระบบติดตามสุขภาพเท้าแบบ mobile-first ตามเอกสาร Requirement ในโฟลเดอร์นี้
+DM Foot Care ระบบติดตามสุขภาพเท้าแบบ mobile-first ที่เชื่อม Supabase, Google Drive, Gemini และ Vercel API สำหรับการใช้งานจริงในโครงการนำร่อง
 
 ## เริ่มใช้งาน
 
@@ -13,17 +13,11 @@ npm run dev
 
 เอกสารหลัก: [แผนพัฒนา](IMPLEMENTATION_PLAN.md), [Requirement audit](REQUIREMENT_AUDIT.md), [Backend integration contract](BACKEND_INTEGRATION_CONTRACT.md), [Pilot QA checklist](PILOT_QA_CHECKLIST.md) และ [Supabase foundation](supabase/README.md)
 
-บัญชีทดลอง:
-
-- ผู้ป่วย: `DM001` / PIN `1234`
-- แพทย์: `DMDR01` / PIN `1234`
-
-## สิ่งที่ทดลองได้
+## ความสามารถหลัก
 
 - Patient: login, home, capture flow 4 มุมด้วยภาพตัวอย่าง/ไฟล์จากกล้อง, photo review, processing pipeline (mock private archive + mock AI), offline/online recovery, human review, post-confirmation thumbnail finalization, history, calendar, insight และ knowledge library
 - Doctor: overview, user management (สร้างบัญชีพร้อม PIN เริ่มต้นแบบไม่เก็บค่า PIN ดิบ, แก้ไข/ปิดใช้งาน/reset PIN/ดูประวัติ), Disease Master ที่กำหนดเกณฑ์ Severity แยกต่อภาวะ และ knowledge management
 - Production boundary: private Drive folder path is deterministic (`DM Foot Care/รูปเท้า/YYYY/Month/DD/Username_ExaminationID`) and is derived server-side/covered by contract tests; setting `VITE_DMFC_API_BASE_URL` switches auth, current-user history, published patient Knowledge/Disease labels (including Supabase-shaped Disease normalization), staff read data and typed admin mutation boundaries to the browser-safe HTTP adapters
-- Session demo ถูกจำด้วย localStorage เพื่อจำลอง remember session
 - `npm run test:ai` ตรวจ AI output validator, mock provider, resumable/idempotent analysis workflow, thumbnail finalization/browser thumbnail service, draft storage, audit log, schema invariants, HTTP adapter contract, runtime adapter selection, HTTP pipeline end-to-end contract และ image-quality heuristics
 - `npm run test:security` ตรวจไม่ให้ backend secret/private key/raw PIN หรือ sensitive client log หลุดเข้า source และ production bundle
 - `npm run test:preflight` ตรวจ deployment preflight contract ด้วย fake backend (HTTPS-local exception, CORS และ response shape) โดยไม่ต้องใช้ credentials จริง
@@ -31,9 +25,7 @@ npm run dev
 
 ## ขอบเขตสำคัญ
 
-โปรเจกต์นี้ใช้ mock data และ mock AI เพื่อทดสอบ UX ก่อน จุดเชื่อม provider แยกไว้ที่ `src/services/contracts.ts` และ `src/services/httpAdapters.ts`; endpoint contract อยู่ใน `BACKEND_INTEGRATION_CONTRACT.md` ส่วนการเชื่อม Supabase, Google Drive และ Cloud AI จริงยังต้องตั้งค่า backend/credentials ก่อนเปิด pilot
-
-ห้ามนำ `.env` ที่มี secret/service role/Drive/AI key ไปไว้ใน frontend หรือ commit เข้า repository
+Browser runtime ไม่มี silent mock/demo fallback หาก Backend มีปัญหา ระบบจะแสดงสถานะว่างหรือข้อผิดพลาดแทนการใส่ข้อมูลตัวอย่าง ผู้ใช้งาน Production ต้องผ่าน Backend API และข้อมูลจริงเท่านั้น
 
 ## ตรวจสอบคุณภาพ
 

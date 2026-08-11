@@ -3,6 +3,7 @@ import analysis from '../backend/api/v1/analysis.mjs'
 import auditEvents from '../backend/api/v1/audit-events.mjs'
 import examinations from '../backend/api/v1/examinations.mjs'
 import knowledge from '../backend/api/v1/knowledge.mjs'
+import savedKnowledge from '../backend/api/v1/knowledge-saved.mjs'
 import originalImages from '../backend/api/v1/original-images.mjs'
 import authSession from '../backend/api/v1/auth/session.mjs'
 import authSignOut from '../backend/api/v1/auth/sign-out.mjs'
@@ -20,6 +21,7 @@ import imageFolders from '../backend/api/v1/original-images/folders.mjs'
 import adminUsers from '../backend/api/v1/admin/users.mjs'
 import adminDiseases from '../backend/api/v1/admin/diseases.mjs'
 import adminKnowledge from '../backend/api/v1/admin/knowledge.mjs'
+import adminDashboard from '../backend/api/v1/admin/dashboard.mjs'
 import adminUserExaminations from '../backend/api/v1/admin/user-examinations.mjs'
 import adminUser from '../backend/api/v1/admin/user.mjs'
 import { sendJson } from '../backend/api/_lib/http.mjs'
@@ -48,16 +50,23 @@ export default async function handler(req, res) {
   if (path === 'v1/examinations') return examinations(req, res)
   if (path === 'v1/examinations/drafts') return drafts(req, res)
   if (path === 'v1/knowledge') return knowledge(req, res)
+  if (path === 'v1/knowledge/saved') return savedKnowledge(req, res)
   if (path === 'v1/original-images') return originalImages(req, res)
   if (path === 'v1/original-images/folders') return imageFolders(req, res)
   if (path === 'v1/admin/users') return adminUsers(req, res)
   if (path === 'v1/admin/diseases') return adminDiseases(req, res)
   if (path === 'v1/admin/knowledge') return adminKnowledge(req, res)
+  if (path === 'v1/admin/dashboard') return adminDashboard(req, res)
 
   let match = path.match(/^v1\/admin\/diseases\/([^/]+)(?:\/(status))?$/)
   if (match) {
     withParams(req, { diseaseId: decodeURIComponent(match[1]), action: match[2] || '' })
     return adminDiseases(req, res)
+  }
+  match = path.match(/^v1\/admin\/knowledge\/([^/]+)$/)
+  if (match) {
+    withParams(req, { articleId: decodeURIComponent(match[1]) })
+    return adminKnowledge(req, res)
   }
   match = path.match(/^v1\/examinations\/([^/]+)\/images\/([^/]+)$/)
   if (match) {

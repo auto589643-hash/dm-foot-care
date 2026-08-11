@@ -1,10 +1,11 @@
 import { handleOptions, readJsonBody, sendJson, setCors } from '../_lib/http.mjs'
 import { downloadFile } from '../_lib/drive.mjs'
 import { callGemini } from '../_lib/gemini.mjs'
-import { loadActiveDiseaseMaster, requireSupabaseUser } from '../_lib/supabase.mjs'
+import { loadActiveDiseaseMaster, requireSupabaseUser, supabaseRest } from '../_lib/supabase.mjs'
 
 const validPositions = new Set(['left-dorsal', 'left-sole', 'right-dorsal', 'right-sole'])
 const validSeverities = new Set(['เล็กน้อย', 'ปานกลาง', 'รุนแรง'])
+const severityRank = { 'เล็กน้อย': 1, 'ปานกลาง': 2, 'รุนแรง': 3 }
 const maxAnalysisImageBytes = 800_000
 const maxAnalysisPayloadBytes = 3_200_000
 
@@ -24,6 +25,26 @@ function readInlineImages(values) {
 
 function logTiming(examinationId, startedAt, phases, outcome) {
   console.info(JSON.stringify({ event: 'dmfc_analysis_timing', examinationId, outcome, totalMs: Date.now() - startedAt, ...phases }))
+}
+
+function compareSeverity(current, previous) {
+  if (!previous) return 'ยังไม่มีข้อมูลเปรียบเทียบ'
+  const currentRank = severityRank[current] || 0
+  const previousRank = severityRank[previous] || 0
+  if (!currentRank || !previousRank) return 'ยังไม่มีข้อมูลเปรียบเทียบ'
+  if (currentRank < previousRank) return 'ดีขึ้น'
+  if (currentRank > previousRank) return 'แย่ลง'
+  return 'คงที่'
+}
+
+async function loadPreviousSeverityByDisease(userId, examinationId) {
+  const previousExams = await supabaseRest(`/rest/v1/examinations?select=id&user_id=eq.${encodeURIComponent(userId)}&id=neq.${encodeURIComponent(examinationId)}&status=eq.confirmed&order=examined_at.desc.nullslast,created_at.desc&limit=20`)
+  if (!previousExams.length) return new Map()
+  const ids = previousExams.map((exam) => exam.id).join(',')
+  const rows = await supabaseRest(`/rest/v1/confirmed_findings?select=disease_id,severity_label_snapshot,confirmed_at&examination_id=in.(${encodeURIComponent(ids)})&order=confirmed_at.desc`)
+  const result = new Map()
+  for (const row of rows) if (!result.has(row.disease_id)) result.set(row.disease_id, row.severity_label_snapshot)
+  return result
 }
 
 export default async function handler(req, res) {
@@ -53,9 +74,14 @@ export default async function handler(req, res) {
     if (!body.examinationId || !body.idempotencyKey || images.length === 0) {
       return sendJson(res, 400, { message: 'examinationId, idempotencyKey and images are required for the initial Gemini path' })
     }
+
     const diseaseStartedAt = Date.now()
-    const diseaseMaster = await loadActiveDiseaseMaster()
+    const [diseaseMaster, previousSeverityByDisease] = await Promise.all([
+      loadActiveDiseaseMaster(),
+      loadPreviousSeverityByDisease(session.user.id, body.examinationId),
+    ])
     phases.diseaseMasterMs = Date.now() - diseaseStartedAt
+
     const geminiStartedAt = Date.now()
     const analysis = await callGemini({ images, diseaseMaster })
     phases.geminiMs = Date.now() - geminiStartedAt
@@ -80,7 +106,7 @@ export default async function handler(req, res) {
         detected: item.detected,
         severity: severity || 'เล็กน้อย',
         confidence: Math.round(item.confidence * 100),
-        comparison: 'คงที่',
+        comparison: item.detected ? compareSeverity(severity, previousSeverityByDisease.get(disease.id)) : 'ยังไม่มีข้อมูลเปรียบเทียบ',
         imagePosition: positions[0] || null,
         imagePositions: positions,
       })
@@ -95,7 +121,6 @@ export default async function handler(req, res) {
       userId: session.user.id,
     })
   } catch (error) {
-    // Keep the full provider response in Vercel logs; return only a concise failure to clients.
     console.error('Gemini analysis failed', error)
     logTiming(examinationId, startedAt, phases, 'failed')
     sendJson(res, 500, { message: error instanceof Error ? error.message : 'Gemini analysis failed' })
