@@ -129,6 +129,17 @@ export async function getFileMetadata(fileId) {
   return response.json()
 }
 
+export async function downloadThumbnail(fileId) {
+  const metadataResponse = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { fields: 'id,name,mimeType,thumbnailLink' }))
+  const metadata = await metadataResponse.json()
+  if (!metadata.thumbnailLink) throw new Error('Google Drive preview is not available for this file')
+  const response = await fetch(metadata.thumbnailLink, { headers: { authorization: `Bearer ${await accessToken()}` } })
+  if (!response.ok) throw new Error(`Google Drive thumbnail request failed (${response.status})`)
+  const data = Buffer.from(await response.arrayBuffer())
+  if (!data.length) throw new Error('Google Drive returned an empty preview')
+  return { data, mimeType: response.headers.get('content-type') || 'image/jpeg' }
+}
+
 export async function downloadFile(fileId) {
   const response = await driveFetch(driveUrl(`/files/${encodeURIComponent(fileId)}`, { alt: 'media' }))
   return { data: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type') || 'application/octet-stream' }

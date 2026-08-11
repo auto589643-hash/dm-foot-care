@@ -23,6 +23,7 @@ import adminDiseases from '../backend/api/v1/admin/diseases.mjs'
 import adminKnowledge from '../backend/api/v1/admin/knowledge.mjs'
 import adminDashboard from '../backend/api/v1/admin/dashboard.mjs'
 import adminUserExaminations from '../backend/api/v1/admin/user-examinations.mjs'
+import adminExaminationImage from '../backend/api/v1/admin/examination-image.mjs'
 import adminUser from '../backend/api/v1/admin/user.mjs'
 import { sendJson } from '../backend/api/_lib/http.mjs'
 
@@ -77,6 +78,11 @@ export default async function handler(req, res) {
   if (match) {
     withParams(req, { userId: decodeURIComponent(match[1]) })
     return adminUserExaminations(req, res)
+  }
+  match = path.match(/^v1\/admin\/examinations\/([^/]+)\/images\/([^/]+)$/)
+  if (match) {
+    withParams(req, { examinationId: decodeURIComponent(match[1]), position: decodeURIComponent(match[2]) })
+    return adminExaminationImage(req, res)
   }
   match = path.match(/^v1\/admin\/users\/([^/]+)(?:\/(status))?$/)
   if (match) {

@@ -345,6 +345,12 @@ export class HttpAdminService implements AdminService {
     return readArrayResponse(await this.client.get<import('../types.ts').Examination[] | { examinations?: import('../types.ts').Examination[] }>(`/v1/admin/users/${encodeURIComponent(userId)}/examinations`), 'examinations')
   }
 
+  async getExaminationImage(examinationId: string, position: FootPosition): Promise<string> {
+    const response = await this.client.get<{ url: string }>(`/v1/admin/examinations/${encodeURIComponent(examinationId)}/images/${encodeURIComponent(position)}`)
+    if (!response.url) throw new Error('ไม่พบ URL รูปจากการตรวจ')
+    return response.url
+  }
+
   async listDiseases(): Promise<import('../types.ts').Disease[]> {
     const response = await this.client.get<import('../types.ts').Disease[] | { diseases?: unknown }>('/v1/admin/diseases')
     return normalizeDiseaseList(Array.isArray(response) ? response : response.diseases)
