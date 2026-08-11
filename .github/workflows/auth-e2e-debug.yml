@@ -1,0 +1,75 @@
+name: Auth E2E debug
+
+on:
+  push:
+    branches:
+      - agent/auth-recovery-debug
+
+jobs:
+  auth-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Register temporary QA user
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://dm-foot-care.vercel.app/api"
+          PAYLOAD='{"username":"QA_AUTH_0811","displayName":"QA Auth Debug","dateOfBirth":"1990-01-01","occupation":"QA","pin":"4826"}'
+          code=$(curl -sS -o register.json -w '%{http_code}' -H 'content-type: application/json' -d "$PAYLOAD" "$BASE/v1/auth/register")
+          cat register.json
+          test "$code" = "201"
+
+      - name: Confirm duplicate registration is blocked
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://dm-foot-care.vercel.app/api"
+          PAYLOAD='{"username":"QA_AUTH_0811","displayName":"QA Auth Debug","dateOfBirth":"1990-01-01","occupation":"QA","pin":"4826"}'
+          code=$(curl -sS -o duplicate.json -w '%{http_code}' -H 'content-type: application/json' -d "$PAYLOAD" "$BASE/v1/auth/register")
+          cat duplicate.json
+          test "$code" = "409"
+
+      - name: Confirm pending user cannot sign in yet
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://dm-foot-care.vercel.app/api"
+          code=$(curl -sS -o pending-login.json -w '%{http_code}' -H 'content-type: application/json' -d '{"username":"QA_AUTH_0811","pin":"4826"}' "$BASE/v1/auth/username/sign-in")
+          cat pending-login.json
+          test "$code" = "401"
+
+      - name: Wait for QA approval
+        run: sleep 90
+
+      - name: Sign in and verify authenticated user surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://dm-foot-care.vercel.app/api"
+          code=$(curl -sS -c cookies.txt -o signin.json -w '%{http_code}' -H 'content-type: application/json' -d '{"username":"QA_AUTH_0811","pin":"4826"}' "$BASE/v1/auth/username/sign-in")
+          jq 'del(.accessToken)' signin.json
+          test "$code" = "200"
+          TOKEN=$(jq -r '.accessToken' signin.json)
+          test -n "$TOKEN"
+          test "$TOKEN" != "null"
+
+          for path in v1/knowledge v1/examinations v1/knowledge/saved; do
+            status=$(curl -sS -o response.json -w '%{http_code}' -H "authorization: Bearer $TOKEN" "$BASE/$path")
+            echo "$path -> $status"
+            test "$status" = "200"
+          done
+
+          admin_status=$(curl -sS -o admin.json -w '%{http_code}' -H "authorization: Bearer $TOKEN" "$BASE/v1/admin/dashboard")
+          echo "admin dashboard as user -> $admin_status"
+          test "$admin_status" = "403"
+
+      - name: Verify refresh-cookie session restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://dm-foot-care.vercel.app/api"
+          code=$(curl -sS -b cookies.txt -c cookies.txt -o session.json -w '%{http_code}' "$BASE/v1/auth/session")
+          jq 'del(.accessToken)' session.json
+          test "$code" = "200"
+          test "$(jq -r '.profile.username' session.json)" = "QA_AUTH_0811"
