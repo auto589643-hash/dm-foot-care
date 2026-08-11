@@ -8,6 +8,7 @@ const ROLE_CACHE_TTL_MS = 10_000
 const CACHE_MAX_ENTRIES = 256
 const tokenUserCache = new Map()
 const roleCache = new Map()
+const signedUrlCache = new Map()
 
 function config() {
   const url = String(process.env.SUPABASE_URL || '').replace(/\/$/, '')
@@ -180,6 +181,9 @@ export async function supabaseStorage(path, init = {}) {
 }
 
 export async function createStorageSignedUrl(bucket, objectPath, expiresIn = 3600) {
+  const cacheKey = `${bucket}:${objectPath}:${expiresIn}`
+  const cached = cacheGet(signedUrlCache, cacheKey)
+  if (cached) return cached
   const payload = await supabaseStorage(`/object/sign/${encodeURIComponent(bucket)}/${objectPath.split('/').map(encodeURIComponent).join('/')}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -187,9 +191,11 @@ export async function createStorageSignedUrl(bucket, objectPath, expiresIn = 360
   })
   const signed = payload?.signedURL || payload?.signedUrl
   if (!signed) throw new Error('Supabase Storage did not return a signed URL')
-  if (/^https?:\/\//i.test(signed)) return signed
   const { url } = config()
-  return `${url}/storage/v1${signed}`
+  const signedUrl = /^https?:\/\//i.test(signed) ? signed : `${url}/storage/v1${signed}`
+  const safeTtlMs = Math.max(5_000, Math.min(expiresIn * 1000 - 60_000, 30 * 60_000))
+  cacheSet(signedUrlCache, cacheKey, signedUrl, safeTtlMs)
+  return signedUrl
 }
 
 function ageFromBirthDate(value) {
