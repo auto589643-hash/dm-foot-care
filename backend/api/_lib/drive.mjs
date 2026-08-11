@@ -66,7 +66,7 @@ async function accessToken() {
     const signer = crypto.createSign('RSA-SHA256')
     signer.update(unsigned)
     const assertion = `${unsigned}.${base64Url(signer.sign(serviceAccount.private_key))}`
-    body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth-type:jwt-bearer', assertion })
+    body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion })
   }
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
