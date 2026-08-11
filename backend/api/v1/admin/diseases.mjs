@@ -1,7 +1,8 @@
 import { handleOptions, readJsonBody, sendJson, setCors } from '../../_lib/http.mjs'
-import { requireAdminUser, supabaseRest } from '../../_lib/supabase.mjs'
+import { createStorageSignedUrl, requireAdminUser, supabaseRest, supabaseStorage } from '../../_lib/supabase.mjs'
 
 const VALID_SEVERITIES = new Set(['เล็กน้อย', 'ปานกลาง', 'รุนแรง'])
+const MAX_REFERENCE_BYTES = 4_000_000
 
 function badRequest(message) {
   const error = new Error(message)
@@ -71,6 +72,28 @@ function normalizeSeverityLevels(rawLevels) {
   return levels
 }
 
+function decodeReferenceImage(value) {
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(value || ''))
+  if (!match) return null
+  const bytes = Buffer.from(match[2], 'base64')
+  if (!bytes.length || bytes.length > MAX_REFERENCE_BYTES) throw badRequest('รูปอ้างอิงมีขนาดใหญ่เกินไป')
+  const extension = match[1] === 'image/png' ? 'png' : match[1] === 'image/webp' ? 'webp' : 'jpg'
+  return { mimeType: match[1], bytes, extension }
+}
+
+async function resolveReferenceImagePath(code, value, existingPath = null) {
+  if (!value) return null
+  const decoded = decodeReferenceImage(value)
+  if (!decoded) return existingPath
+  const path = `${code}/${Date.now()}.${decoded.extension}`
+  await supabaseStorage(`/object/dmfc-disease-reference/${path.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'POST',
+    headers: { 'content-type': decoded.mimeType, 'x-upsert': 'false', 'cache-control': '31536000' },
+    body: decoded.bytes,
+  })
+  return path
+}
+
 function normalizeDiseaseInput(body, existing = null) {
   const name = String(body?.name || '').trim()
   const category = String(body?.category || '').trim()
@@ -86,13 +109,17 @@ function normalizeDiseaseInput(body, existing = null) {
     detectionCriteria: normalizeDetectionCriteria(body?.criteria),
     care,
     recommendation,
-    referenceImage: body?.referenceImage ? String(body.referenceImage) : null,
+    referenceImage: body?.referenceImage ? String(body.referenceImage) : '',
     active: typeof body?.active === 'boolean' ? body.active : existing?.active ?? true,
     severityLevels: normalizeSeverityLevels(body?.severityLevels),
   }
 }
 
-function mapDisease(disease, levels = []) {
+async function mapDisease(disease, levels = []) {
+  let referenceImage
+  if (disease.reference_image_path) {
+    try { referenceImage = await createStorageSignedUrl('dmfc-disease-reference', disease.reference_image_path) } catch { referenceImage = undefined }
+  }
   return {
     id: disease.code,
     name: disease.name,
@@ -108,7 +135,7 @@ function mapDisease(disease, levels = []) {
     })),
     care: disease.care_instruction || '',
     recommendation: disease.recommendation || '',
-    referenceImage: disease.reference_image_path || undefined,
+    referenceImage,
     active: Boolean(disease.active),
   }
 }
@@ -134,7 +161,7 @@ async function listDiseases() {
     current.push(level)
     levelsByDisease.set(level.disease_id, current)
   }
-  return diseases.map((disease) => mapDisease(disease, levelsByDisease.get(disease.id) || []))
+  return Promise.all(diseases.map((disease) => mapDisease(disease, levelsByDisease.get(disease.id) || [])))
 }
 
 async function getNextDiseaseCode() {
@@ -168,6 +195,7 @@ async function writeAudit(actorId, eventType, code, payload = {}) {
 async function createDisease(body, actorId) {
   const input = normalizeDiseaseInput(body)
   const code = await getNextDiseaseCode()
+  const referenceImagePath = await resolveReferenceImagePath(code, input.referenceImage)
   const rows = await supabaseRest('/rest/v1/diseases', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
@@ -179,7 +207,7 @@ async function createDisease(body, actorId) {
       detection_criteria: input.detectionCriteria,
       care_instruction: input.care,
       recommendation: input.recommendation,
-      reference_image_path: input.referenceImage,
+      reference_image_path: referenceImagePath,
       active: input.active,
       revision: 1,
       created_by: actorId,
@@ -201,6 +229,7 @@ async function createDisease(body, actorId) {
 async function updateDisease(code, body, actorId) {
   const existing = await findDiseaseByCode(code)
   const input = normalizeDiseaseInput(body, existing)
+  const referenceImagePath = await resolveReferenceImagePath(code, input.referenceImage, existing.reference_image_path)
   const rows = await supabaseRest(`/rest/v1/diseases?id=eq.${encodeURIComponent(existing.id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
@@ -211,7 +240,7 @@ async function updateDisease(code, body, actorId) {
       detection_criteria: input.detectionCriteria,
       care_instruction: input.care,
       recommendation: input.recommendation,
-      reference_image_path: input.referenceImage,
+      reference_image_path: referenceImagePath,
       active: input.active,
       revision: Number(existing.revision || 1) + 1,
       updated_at: new Date().toISOString(),
