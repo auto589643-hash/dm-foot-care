@@ -1,4 +1,4 @@
-name: Verify admin user lifecycle changes
+name: Verify hardened user lifecycle UI
 on:
   push:
     branches:
@@ -16,14 +16,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Apply user lifecycle patch
-        run: node scripts/apply-user-trash.mjs
+      - name: Harden lifecycle form
+        run: node scripts/harden-user-lifecycle-ui.mjs
       - name: Verify application
         run: npm run verify
       - name: Commit generated changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/api/_lib/http.mjs backend/api/v1/admin/user.mjs backend/api/v1/admin/dashboard.mjs src/services/contracts.ts src/services/httpAdapters.ts src/App.tsx src/legacy65925.css tests/http_adapters.test.ts
-          git commit -m "Add admin user trash and pending request deletion" || exit 0
+          git add src/App.tsx src/legacy65925.css
+          git commit -m "Require lifecycle actions for user status changes" || exit 0
           git push
