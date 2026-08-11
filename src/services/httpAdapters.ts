@@ -44,6 +44,7 @@ export class BackendHttpClient {
   private readonly getAccessToken?: BackendHttpClientOptions['getAccessToken']
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
+  private readonly inFlightGets = new Map<string, Promise<unknown>>()
 
   constructor(options: BackendHttpClientOptions) {
     if (!options.baseUrl.trim()) throw new Error('Backend API base URL is required')
@@ -60,7 +61,15 @@ export class BackendHttpClient {
   }
 
   async get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'GET' })
+    const pending = this.inFlightGets.get(path)
+    if (pending) return pending as Promise<T>
+    const request = this.request<T>(path, { method: 'GET' })
+    this.inFlightGets.set(path, request)
+    try {
+      return await request
+    } finally {
+      if (this.inFlightGets.get(path) === request) this.inFlightGets.delete(path)
+    }
   }
 
   async getBlob(path: string, timeoutMs = 90_000): Promise<Blob> {
@@ -234,15 +243,25 @@ export class HttpOriginalImageArchive implements OriginalImageArchive {
     return response.folderId
   }
 
-  async uploadOriginal(folderId: string, position: FootPosition, image: Blob): Promise<string> {
+  private async upload(folderId: string, position: FootPosition, image: Blob, examinationId?: string): Promise<string> {
     const response = await this.client.postBinary<{ fileId: string }>('/v1/original-images', image, {
       'x-dmfc-drive-folder': folderId,
       'x-dmfc-image-position': position,
+      ...(examinationId ? { 'x-dmfc-examination-id': examinationId } : {}),
       // HTTP header values are ByteStrings. Percent-encode Thai file names in
       // transit, then the server decodes them before calling Google Drive.
       'x-dmfc-drive-filename': encodeURIComponent(buildOriginalDriveFilename(position, image.type)),
     })
     return response.fileId
+  }
+
+  async uploadOriginal(folderId: string, position: FootPosition, image: Blob): Promise<string> {
+    return this.upload(folderId, position, image)
+  }
+
+  async uploadOriginalWithReference(input: { folderId: string; examinationId: string; position: FootPosition; image: Blob; metadata: Record<string, unknown> }): Promise<string> {
+    void input.metadata
+    return this.upload(input.folderId, input.position, input.image, input.examinationId)
   }
 }
 
@@ -320,6 +339,11 @@ export class HttpExaminationRepository implements ExaminationRepository {
     const { confirmedBy: _confirmedBy, ...serverInput } = input
     void _confirmedBy
     await this.client.postJson(`/v1/examinations/${encodeURIComponent(input.examinationId)}/confirmed-findings`, serverInput)
+  }
+
+  async saveConfirmedFindings(input: { examinationId: string; findings: Array<{ diseaseId: string; severity: Severity | null; aiFindingId?: string }>; confirmedBy: string }): Promise<void> {
+    void input.confirmedBy
+    await this.client.postJson(`/v1/examinations/${encodeURIComponent(input.examinationId)}/confirmed-findings`, { findings: input.findings })
   }
 
   async saveThumbnailReferences(input: { examinationId: string; thumbnails: Record<FootPosition, string> }): Promise<void> {
