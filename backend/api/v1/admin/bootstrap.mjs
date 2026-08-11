@@ -81,6 +81,7 @@ export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   setCors(res)
   if (req.method !== 'GET') return sendJson(res, 405, { message: 'Method not allowed' })
+  const startedAt = Date.now()
   try {
     const session = await requireAdminUser(req, res)
     if (!session) return
@@ -95,9 +96,13 @@ export default async function handler(req, res) {
     const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback
     const partial = results.some((result) => result.status === 'rejected')
     if (partial) console.warn('admin bootstrap partial failure', results.map((result) => result.status === 'rejected' ? String(result.reason?.message || result.reason) : 'ok'))
+    const totalMs = Date.now() - startedAt
     res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader('Server-Timing', `admin-bootstrap;dur=${totalMs}`)
+    console.info(JSON.stringify({ event: 'dmfc_admin_bootstrap_timing', partial, totalMs }))
     return sendJson(res, 200, { users: value(0, []), diseases: value(1, []), articles: value(2, []), dashboard: value(3, null), partial })
   } catch (error) {
+    res.setHeader('Server-Timing', `admin-bootstrap;dur=${Date.now() - startedAt}`)
     console.error('admin bootstrap failed', error)
     return sendJson(res, 500, { message: 'ไม่สามารถโหลดข้อมูลผู้ดูแลระบบได้' })
   }
