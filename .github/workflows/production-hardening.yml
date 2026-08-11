@@ -1,0 +1,37 @@
+name: Production hardening
+
+on:
+  push:
+    branches:
+      - fix/remove-mocks-production-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/remove-mocks-production-hardening
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/apply_production_hardening.mjs
+      - run: npm run lint
+      - run: npm run build
+      - name: Commit generated hardening changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src backend README.md
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+          else
+            git commit -m "Remove runtime mocks and connect real data surfaces"
+            git push origin HEAD:fix/remove-mocks-production-hardening
+          fi
