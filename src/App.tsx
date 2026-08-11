@@ -122,22 +122,34 @@ function App() {
   const [patientExaminations, setPatientExaminations] = useState<Examination[]>([])
   const [patientKnowledge, setPatientKnowledge] = useState<KnowledgeArticle[]>([])
   const [patientDiseases, setPatientDiseases] = useState<Disease[]>([])
+  const [historyThumbnailsLoaded, setHistoryThumbnailsLoaded] = useState(false)
+  const [patientKnowledgeMode, setPatientKnowledgeMode] = useState<'none' | 'featured' | 'full'>('none')
 
-  const loadPatientExaminations = useCallback(async () => {
+  const loadPatientExaminations = useCallback(async (includeThumbnails = false) => {
     if (!integrations?.repository.listForCurrentUser) return
     try {
-      setPatientExaminations(await integrations.repository.listForCurrentUser())
+      const rows = await integrations.repository.listForCurrentUser(includeThumbnails)
+      setPatientExaminations((current) => {
+        if (includeThumbnails || !current.length) return rows
+        const existingThumbnails = new Map(current.map((exam) => [exam.id, exam.thumbnails]))
+        return rows.map((exam) => ({ ...exam, thumbnails: existingThumbnails.get(exam.id) ?? exam.thumbnails }))
+      })
+      if (includeThumbnails) setHistoryThumbnailsLoaded(true)
     } catch {
-      // Keep the authenticated shell usable; the backend can expose a retry UI later.
+      // Keep the authenticated shell usable; navigation remains available for retry.
     }
   }, [integrations])
 
-  const loadPatientKnowledge = useCallback(async () => {
+  const loadPatientKnowledge = useCallback(async (featuredOnly = false) => {
     if (!integrations?.knowledge) return
     try {
-      const content = await integrations.knowledge.listPublished()
-      setPatientKnowledge(content.articles)
-      setPatientDiseases(content.diseases)
+      const content = await integrations.knowledge.listPublished(featuredOnly ? { limit: 1, includeDiseaseImages: false } : undefined)
+      setPatientKnowledge((current) => featuredOnly && current.length > content.articles.length ? current : content.articles)
+      setPatientDiseases((current) => content.diseases.map((disease) => ({
+        ...disease,
+        referenceImage: disease.referenceImage ?? current.find((item) => item.id === disease.id)?.referenceImage,
+      })))
+      setPatientKnowledgeMode((current) => featuredOnly && current === 'full' ? 'full' : featuredOnly ? 'featured' : 'full')
     } catch {
       // Keep the patient shell usable with the last known content if the API is unavailable.
     }
@@ -152,8 +164,8 @@ function App() {
       setProfile(nextProfile)
       setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
       if (nextProfile.role === 'user') {
-        void loadPatientExaminations()
-        void loadPatientKnowledge()
+        void loadPatientExaminations(false)
+        void loadPatientKnowledge(true)
       }
     }).catch(() => {
       // Keep the login screen actionable when the backend is temporarily unavailable.
@@ -175,8 +187,8 @@ function App() {
     setPage(nextProfile.role === 'admin' ? 'admin-home' : 'home')
     void integrations.audit.append({ actorId: nextProfile.id, eventType: 'login', entityType: 'session', entityId: nextProfile.id, payload: { role: nextProfile.role } }).catch(() => {})
     if (nextProfile.role === 'user') {
-      void loadPatientExaminations()
-      void loadPatientKnowledge()
+      void loadPatientExaminations(false)
+      void loadPatientKnowledge(true)
     }
   }
 
@@ -190,6 +202,8 @@ function App() {
     setPatientExaminations([])
     setPatientKnowledge([])
     setPatientDiseases([])
+    setHistoryThumbnailsLoaded(false)
+    setPatientKnowledgeMode('none')
     setProfileOpen(false)
     setProfileDialog(null)
     setExamStage('intro')
@@ -198,6 +212,10 @@ function App() {
   const goTo = (nextPage: Page) => {
     setPage(nextPage)
     setProfileOpen(false)
+    if (profile?.role === 'user') {
+      if (nextPage === 'history' && !historyThumbnailsLoaded) void loadPatientExaminations(true)
+      if (nextPage === 'knowledge' && patientKnowledgeMode !== 'full') void loadPatientKnowledge(false)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 

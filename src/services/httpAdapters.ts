@@ -315,8 +315,9 @@ export class HttpExaminationRepository implements ExaminationRepository {
     return this.client.postJson('/v1/examinations/drafts', {})
   }
 
-  async listForCurrentUser(): Promise<Examination[]> {
-    const response = await this.client.get<Examination[] | { examinations?: Examination[] }>('/v1/examinations')
+  async listForCurrentUser(includeThumbnails = false): Promise<Examination[]> {
+    const path = includeThumbnails ? '/v1/examinations?includeThumbnails=true' : '/v1/examinations'
+    const response = await this.client.get<Examination[] | { examinations?: Examination[] }>(path)
     return Array.isArray(response) ? response : response.examinations ?? []
   }
 
@@ -369,8 +370,12 @@ export class HttpExaminationRepository implements ExaminationRepository {
 export class HttpKnowledgeLibraryService implements KnowledgeLibraryService {
   private readonly client: BackendHttpClient
   constructor(client: BackendHttpClient) { this.client = client }
-  async listPublished(): Promise<{ articles: import('../types.ts').KnowledgeArticle[]; diseases: import('../types.ts').Disease[] }> {
-    const response = await this.client.get<{ articles?: import('../types.ts').KnowledgeArticle[]; diseases?: import('../types.ts').Disease[] } | import('../types.ts').KnowledgeArticle[]>('/v1/knowledge')
+  async listPublished(options?: { limit?: number; includeDiseaseImages?: boolean }): Promise<{ articles: import('../types.ts').KnowledgeArticle[]; diseases: import('../types.ts').Disease[] }> {
+    const query = new URLSearchParams()
+    if (options?.limit) query.set('limit', String(options.limit))
+    if (options?.includeDiseaseImages === false) query.set('includeDiseaseImages', 'false')
+    const path = query.size ? `/v1/knowledge?${query}` : '/v1/knowledge'
+    const response = await this.client.get<{ articles?: import('../types.ts').KnowledgeArticle[]; diseases?: import('../types.ts').Disease[] } | import('../types.ts').KnowledgeArticle[]>(path)
     if (Array.isArray(response)) return { articles: response, diseases: [] }
     return { articles: response.articles ?? [], diseases: normalizeDiseaseList(response.diseases) }
   }

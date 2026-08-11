@@ -47,7 +47,7 @@ export interface ExaminationDraft {
 
 export interface ExaminationRepository {
   createDraft(userId: string): Promise<ExaminationDraft>
-  listForCurrentUser?(): Promise<Examination[]>
+  listForCurrentUser?(includeThumbnails?: boolean): Promise<Examination[]>
   getImageReferences(examinationId: string): Promise<{
     driveFolderId: string | null
     driveFileIds: Partial<Record<FootPosition, string>>
@@ -102,7 +102,7 @@ export interface ExaminationRepository {
 }
 
 export interface KnowledgeLibraryService {
-  listPublished(): Promise<{ articles: KnowledgeArticle[]; diseases: Disease[] }>
+  listPublished(options?: { limit?: number; includeDiseaseImages?: boolean }): Promise<{ articles: KnowledgeArticle[]; diseases: Disease[] }>
   listSavedArticleIds(): Promise<string[]>
   setSaved(articleId: string, saved: boolean): Promise<void>
 }
