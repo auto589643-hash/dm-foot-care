@@ -14,8 +14,13 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Apply admin flow patch
-        run: node scripts/apply-admin-performance-image-flow.mjs
+      - name: Apply admin flow patch when needed
+        run: |
+          if grep -q "getExaminationThumbnails" src/services/contracts.ts && grep -q "adminBootstrap" api/'[...route].mjs'; then
+            echo "Admin flow patch already applied"
+          else
+            node scripts/apply-admin-performance-image-flow.mjs
+          fi
       - name: Verify application
         run: npm run verify
       - name: Verify image and loading architecture
