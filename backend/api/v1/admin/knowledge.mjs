@@ -122,7 +122,7 @@ async function normalizeInput(body, lookups) {
       care,
       treatment: String(body.treatment || '').trim(),
       recommendation: String(body.recommendation || '').trim(),
-      tone: tones.has(body.tone) ? body.tone : severity === 'รุนแรง' ? 'amber' : severity === 'ปานกลาง' ? 'teal' : 'blue',
+      tone: severity === 'รุนแรง' ? 'amber' : severity === 'ปานกลาง' ? 'teal' : 'blue',
     },
     image: body.image ? String(body.image) : '',
   }
