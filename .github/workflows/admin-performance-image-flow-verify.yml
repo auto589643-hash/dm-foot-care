@@ -1,0 +1,40 @@
+name: Verify admin performance and image flow
+on:
+  push:
+    branches: [fix/admin-thumbnails-speed-dashboard]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply admin flow patch
+        run: node scripts/apply-admin-performance-image-flow.mjs
+      - name: Verify application
+        run: npm run verify
+      - name: Verify image and loading architecture
+        run: |
+          grep -q "includeThumbnails: false" backend/api/v1/admin/user-examinations.mjs
+          grep -q "variant === 'original'" backend/api/v1/admin/examination-image.mjs
+          grep -q "Readable.fromWeb" backend/api/v1/admin/examination-image.mjs
+          grep -q "getExaminationThumbnails" src/services/contracts.ts
+          grep -q "getExaminationOriginalImage" src/services/contracts.ts
+          grep -q "getBootstrap" src/services/contracts.ts
+          grep -q "adminExaminationThumbnails" api/'[...route].mjs'
+          grep -q "adminBootstrap" api/'[...route].mjs'
+          grep -q "admin-dashboard-page" src/App.tsx
+          grep -q "loadThumbnails" src/App.tsx
+          grep -q "loadOriginalPhoto" src/App.tsx
+      - name: Commit generated source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/api/_lib/history.mjs backend/api/_lib/drive.mjs backend/api/v1/admin/user-examinations.mjs backend/api/v1/admin/examination-image.mjs backend/api/v1/admin/examination-thumbnails.mjs backend/api/v1/admin/bootstrap.mjs backend/api/v1/admin/users.mjs backend/api/v1/admin/diseases.mjs backend/api/v1/admin/knowledge.mjs api/'[...route].mjs' src/services/contracts.ts src/services/httpAdapters.ts src/App.tsx src/legacy65925.css
+          git diff --cached --quiet || git commit -m "Improve admin loading and examination image flow"
+          git push
