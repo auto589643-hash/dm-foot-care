@@ -25,7 +25,6 @@ import {
   Library,
   List,
   LogOut,
-  MoreHorizontal,
   Plus,
   RotateCcw,
   ScanLine,
@@ -1126,7 +1125,7 @@ function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { 
     void Promise.allSettled(requests).then((results) => { if (!cancelled && results.some((result) => result.status === 'rejected')) showToast('โหลดข้อมูลบางส่วนไม่สำเร็จ กรุณาลองใหม่') })
     return () => { cancelled = true }
   }, [adminService, showToast])
-  if (page === 'users') return <UserManagement users={userRecords} diseaseRecords={diseaseRecords} setUsers={setUserRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} />
+  if (page === 'users') return <UserManagement users={userRecords} diseaseRecords={diseaseRecords} setUsers={setUserRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} onUsersChanged={() => { void adminService.getDashboard().then(setDashboard).catch(() => {}) }} />
   if (page === 'diseases') return <DiseaseManagement diseases={diseaseRecords} setDiseases={setDiseaseRecords} showToast={showToast} adminService={adminService} />
   if (page === 'admin-knowledge') return <KnowledgeManagement articles={knowledgeRecords} diseaseRecords={diseaseRecords} setArticles={setKnowledgeRecords} showToast={showToast} adminService={adminService} />
   return <DoctorHome onNavigate={setPage} users={userRecords} diseaseRecords={diseaseRecords} adminService={adminService} dashboard={dashboard} />
@@ -1155,35 +1154,72 @@ function AdminTable({ rows, onSelect }: { rows: AdminDashboardRecentExam[]; onSe
 
 type UserFormDraft = Omit<UserRecord, 'id' | 'lastExam'> & { pin?: string }
 
-function UserManagement({ users, diseaseRecords, setUsers, showToast, adminService, auditLogger }: { users: UserRecord[]; diseaseRecords: Disease[]; setUsers: React.Dispatch<React.SetStateAction<UserRecord[]>>; showToast: (text: string) => void; adminService: AdminService; auditLogger?: AuditLogger }) {
+function UserManagement({ users, diseaseRecords, setUsers, showToast, adminService, auditLogger, onUsersChanged }: { users: UserRecord[]; diseaseRecords: Disease[]; setUsers: React.Dispatch<React.SetStateAction<UserRecord[]>>; showToast: (text: string) => void; adminService: AdminService; auditLogger?: AuditLogger; onUsersChanged: () => void }) {
+  type UserView = 'active' | 'pending' | 'trash'
+  type ConfirmAction = { kind: 'deactivate' | 'delete-request'; user: UserRecord }
   const [query, setQuery] = useState('')
+  const [view, setView] = useState<UserView>('active')
   const [editing, setEditing] = useState<UserRecord | null>(null)
   const [creating, setCreating] = useState(false)
   const [historyUser, setHistoryUser] = useState<UserRecord | null>(null)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set())
-  const filtered = users.filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase())).sort((left, right) => {
-    const priority = { pending: 0, active: 1, inactive: 2 }
-    return priority[left.status] - priority[right.status] || left.username.localeCompare(right.username)
-  })
+
+  const activeCount = users.filter((user) => user.status === 'active').length
   const pendingCount = users.filter((user) => user.status === 'pending').length
-  const toggle = (id: string) => {
-    if (pendingUserIds.has(id)) return
-    const user = users.find((item) => item.id === id)
-    if (!user) return
+  const trashCount = users.filter((user) => user.status === 'inactive').length
+  const viewStatus: Record<UserView, UserRecord['status']> = { active: 'active', pending: 'pending', trash: 'inactive' }
+  const filtered = users
+    .filter((user) => user.status === viewStatus[view])
+    .filter((user) => `${user.name} ${user.username}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((left, right) => left.username.localeCompare(right.username))
+
+  const markPending = (id: string, pending: boolean) => setPendingUserIds((current) => {
+    const next = new Set(current)
+    if (pending) next.add(id); else next.delete(id)
+    return next
+  })
+
+  const changeStatus = (user: UserRecord, nextStatus: UserRecord['status'], successMessage: string) => {
+    if (pendingUserIds.has(user.id)) return
     const previousStatus = user.status
-    const nextStatus = user.status === 'active' ? 'inactive' : 'active'
-    setUsers((current) => current.map((item) => item.id === id ? { ...item, status: nextStatus } : item))
-    setPendingUserIds((current) => new Set(current).add(id))
-    void adminService.setUserStatus(id, nextStatus).then(() => {
-      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: id, payload: { action: 'status_changed', status: nextStatus } }).catch(() => {})
-      showToast(`${previousStatus === 'pending' ? 'อนุมัติ' : nextStatus === 'active' ? 'เปิด' : 'ปิด'}ใช้งาน ${user.username} แล้ว`)
+    setUsers((current) => current.map((item) => item.id === user.id ? { ...item, status: nextStatus } : item))
+    markPending(user.id, true)
+    void adminService.setUserStatus(user.id, nextStatus).then(() => {
+      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: user.id, payload: { action: 'status_changed', from: previousStatus, status: nextStatus } }).catch(() => {})
+      showToast(successMessage)
+      onUsersChanged()
     }).catch(() => {
-      setUsers((current) => current.map((item) => item.id === id ? { ...item, status: previousStatus } : item))
+      setUsers((current) => current.map((item) => item.id === user.id ? { ...item, status: previousStatus } : item))
       showToast('เปลี่ยนสถานะผู้ใช้ไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว')
-    }).finally(() => {
-      setPendingUserIds((current) => { const next = new Set(current); next.delete(id); return next })
-    })
+    }).finally(() => markPending(user.id, false))
   }
+
+  const deletePendingRequest = (user: UserRecord) => {
+    if (pendingUserIds.has(user.id)) return
+    setUsers((current) => current.filter((item) => item.id !== user.id))
+    markPending(user.id, true)
+    void adminService.deletePendingUser(user.id).then(() => {
+      void auditLogger?.append({ actorId: null, eventType: 'user_updated', entityType: 'user', entityId: user.id, payload: { action: 'registration_request_deleted', username: user.username } }).catch(() => {})
+      showToast(`ลบคำขอ ${user.username} แล้ว · Username นี้สมัครใหม่ได้`)
+      onUsersChanged()
+    }).catch((error) => {
+      setUsers((current) => current.some((item) => item.id === user.id) ? current : [...current, user])
+      showToast(error instanceof Error && error.message ? error.message : 'ลบคำขอไม่สำเร็จ ระบบคืนรายการแล้ว')
+    }).finally(() => markPending(user.id, false))
+  }
+
+  const runConfirmedAction = () => {
+    const action = confirmAction
+    if (!action) return
+    setConfirmAction(null)
+    if (action.kind === 'deactivate') {
+      changeStatus(action.user, 'inactive', `ปิดใช้งาน ${action.user.username} แล้ว · ย้ายไปถังขยะ`)
+    } else {
+      deletePendingRequest(action.user)
+    }
+  }
+
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveUser = async (draft: UserFormDraft) => {
     try {
@@ -1191,12 +1227,45 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
       setUsers((current) => editing ? current.map((user) => user.id === editing.id ? saved : user) : [...current, saved])
       void auditLogger?.append({ actorId: null, eventType: editing ? 'user_updated' : 'user_created', entityType: 'user', entityId: saved.id, payload: { username: saved.username, status: saved.status } }).catch(() => {})
       showToast(`${editing ? 'บันทึกข้อมูล' : 'เพิ่มผู้ใช้'} ${saved.username} แล้ว`)
+      onUsersChanged()
       closeForm()
-    } catch {
-      showToast('บันทึกข้อมูลผู้ใช้ไม่สำเร็จ')
+    } catch (error) {
+      showToast(error instanceof Error && error.message ? error.message : 'บันทึกข้อมูลผู้ใช้ไม่สำเร็จ')
     }
   }
-  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="อนุมัติบัญชีใหม่ เปิดหรือปิดการใช้งาน และติดตามประวัติของ User" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} /><div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>ทั้งหมด {filtered.length} คน</span></div><div className="management-list">{filtered.map((user) => { const statusLabel = user.status === 'pending' ? 'รออนุมัติ' : user.status === 'active' ? 'เปิดใช้งาน' : 'ปิดใช้งาน'; return <article className={user.status === 'pending' ? 'pending-user' : ''} key={user.id} data-pending={pendingUserIds.has(user.id) ? 'true' : undefined}><div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div><div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div><span className={user.status === 'pending' ? 'status-pill attention' : user.status === 'active' ? 'status-pill success' : 'status-pill muted'}>{statusLabel}</span><div className="row-actions">{user.status === 'pending' ? <button className="button button-primary button-small approve-user-button" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => toggle(user.id)}><Check size={17} />อนุมัติ</button> : null}<button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button>{user.status !== 'pending' ? <button className="icon-button" type="button" aria-label={`${user.status === 'active' ? 'ปิด' : 'เปิด'}ใช้งาน ${user.username}`} onClick={() => toggle(user.id)}><MoreHorizontal size={19} /></button> : null}</div></article> })}</div>{creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}{historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}</div>
+
+  const emptyCopy = view === 'active'
+    ? ['ยังไม่มีผู้ใช้งานที่เปิดใช้งาน', 'บัญชีที่ได้รับอนุมัติจะแสดงในรายการนี้']
+    : view === 'pending'
+      ? ['ไม่มีคำขอรออนุมัติ', 'คำขอลงทะเบียนใหม่จะแสดงในส่วนนี้']
+      : ['ถังขยะว่าง', 'บัญชีที่ปิดใช้งานจะถูกแยกมาเก็บที่นี่']
+
+  return <div className="page admin-page"><PageTitle eyebrow="จัดการบัญชี" title="ผู้ใช้งาน" description="แยกบัญชีที่ใช้งาน คำขอรออนุมัติ และบัญชีที่ปิดใช้งานออกจากกัน" action={pendingCount ? <span className="pending-count"><Clock3 size={18} />รออนุมัติ {pendingCount} บัญชี</span> : undefined} />
+    <div className="user-state-tabs" role="tablist" aria-label="สถานะผู้ใช้งาน">
+      <button type="button" role="tab" aria-selected={view === 'active'} className={view === 'active' ? 'active' : ''} onClick={() => setView('active')}>ใช้งานอยู่ <span>{activeCount}</span></button>
+      <button type="button" role="tab" aria-selected={view === 'pending'} className={view === 'pending' ? 'active' : ''} onClick={() => setView('pending')}>รออนุมัติ <span>{pendingCount}</span></button>
+      <button type="button" role="tab" aria-selected={view === 'trash'} className={view === 'trash' ? 'active' : ''} onClick={() => setView('trash')}>ถังขยะ <span>{trashCount}</span></button>
+    </div>
+    <div className="management-toolbar"><label className="search-field"><Search size={20} /><input aria-label="ค้นหาผู้ใช้งาน" placeholder="ค้นหาชื่อหรือ Username" value={query} onChange={(event) => setQuery(event.target.value)} /></label><span>{view === 'active' ? 'ใช้งานอยู่' : view === 'pending' ? 'รออนุมัติ' : 'ปิดใช้งาน'} {filtered.length} คน</span></div>
+    {filtered.length ? <div className="management-list">{filtered.map((user) => <article className={view === 'pending' ? 'pending-user' : view === 'trash' ? 'trash-user' : ''} key={user.id} data-pending={pendingUserIds.has(user.id) ? 'true' : undefined}>
+      <div className="table-user"><span className="avatar">{user.name.slice(0,2)}</span><div><strong>{user.name}</strong><small>{user.username} · อายุ {calculateAge(user.dateOfBirth)} ปี · {calculateGeneration(user.dateOfBirth)} · {user.occupation}</small></div></div>
+      <div className="record-meta"><span>ตรวจล่าสุด</span><strong>{user.lastExam}</strong></div>
+      <span className={view === 'pending' ? 'status-pill attention' : view === 'trash' ? 'status-pill muted' : 'status-pill success'}>{view === 'pending' ? 'รออนุมัติ' : view === 'trash' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</span>
+      <div className="row-actions">
+        {view === 'pending' ? <><button className="button button-primary button-small approve-user-button" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => changeStatus(user, 'active', `อนุมัติ ${user.username} แล้ว`)}><Check size={17} />อนุมัติ</button><button className="button button-danger-outline button-small" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => setConfirmAction({ kind: 'delete-request', user })}>ลบคำขอ</button></> : null}
+        {view === 'active' ? <><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(user) }}>แก้ไข</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button><button className="button button-danger-outline button-small" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => setConfirmAction({ kind: 'deactivate', user })}>ปิดใช้งาน</button></> : null}
+        {view === 'trash' ? <><button className="button button-secondary button-small" type="button" disabled={pendingUserIds.has(user.id)} onClick={() => changeStatus(user, 'active', `คืนสถานะ ${user.username} แล้ว`)}><RotateCcw size={16} />คืนสถานะ</button><button className="button button-ghost button-small" type="button" onClick={() => setHistoryUser(user)}>ดูประวัติ</button></> : null}
+      </div>
+    </article>)}</div> : <div className="empty-state user-list-empty"><Users size={30} /><h2>{emptyCopy[0]}</h2><p>{emptyCopy[1]}</p></div>}
+    {creating || editing ? <UserFormModal user={editing} onClose={closeForm} onSave={saveUser} /> : null}
+    {historyUser ? <UserHistoryModal user={historyUser} diseaseRecords={diseaseRecords} adminService={adminService} onClose={() => setHistoryUser(null)} /> : null}
+    {confirmAction ? <UserActionConfirmModal action={confirmAction} onCancel={() => setConfirmAction(null)} onConfirm={runConfirmedAction} /> : null}
+  </div>
+}
+
+function UserActionConfirmModal({ action, onCancel, onConfirm }: { action: { kind: 'deactivate' | 'delete-request'; user: UserRecord }; onCancel: () => void; onConfirm: () => void }) {
+  const deleting = action.kind === 'delete-request'
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><section className="detail-modal user-action-confirm" role="alertdialog" aria-modal="true" aria-labelledby="user-action-title" aria-describedby="user-action-description"><header><div><span className="eyebrow">ยืนยันการทำรายการ</span><h2 id="user-action-title">{deleting ? 'ลบคำขอลงทะเบียน?' : 'ปิดใช้งานบัญชี?'}</h2></div><button className="icon-button" type="button" aria-label="ยกเลิก" onClick={onCancel}><X size={21} /></button></header><div className="confirm-user"><span className="avatar">{action.user.name.slice(0,2)}</span><div><strong>{action.user.name}</strong><small>{action.user.username}</small></div></div><div id="user-action-description" className={deleting ? 'confirmation-note danger' : 'confirmation-note'}>{deleting ? <><strong>คำขอนี้จะถูกลบออกจากระบบ</strong><p>Profile และบัญชี Supabase Auth จะถูกลบ ทำให้ Username <b>{action.user.username}</b> สามารถใช้สมัครใหม่ได้ การทำรายการนี้ใช้ได้เฉพาะบัญชีที่ยังรออนุมัติและไม่มีประวัติการตรวจ</p></> : <><strong>บัญชีจะถูกย้ายไปถังขยะ</strong><p>User จะเข้าสู่ระบบไม่ได้ และจะไม่แสดงใน Dashboard หรือรายการผู้ใช้งานปกติ ข้อมูลและประวัติเดิมยังคงเก็บไว้และสามารถคืนสถานะภายหลังได้</p></>}</div><div className="confirm-actions"><button className="button button-secondary" type="button" onClick={onCancel}>ยกเลิก</button><button className="button button-danger" type="button" onClick={onConfirm}>{deleting ? 'ยืนยันลบคำขอ' : 'ยืนยันปิดใช้งาน'}</button></div></section></div>
 }
 
 function UserHistoryModal({ user, diseaseRecords, adminService, onClose }: { user: UserRecord; diseaseRecords: Disease[]; adminService: AdminService; onClose: () => void }) {

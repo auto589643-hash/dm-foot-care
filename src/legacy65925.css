@@ -157,3 +157,65 @@
 @media (prefers-reduced-motion: reduce) {
   .app-shell .button-hero { transition-duration: .01ms !important; }
 }
+
+
+/* Admin user lifecycle */
+.user-state-tabs {
+  display: flex;
+  gap: 8px;
+  margin: -6px 0 18px;
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.user-state-tabs button {
+  min-height: 42px;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.user-state-tabs button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 23px;
+  height: 23px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #52647a;
+  background: #edf2f7;
+  font-size: 12px;
+}
+.user-state-tabs button.active { color: #174bb8; background: #eaf2ff; }
+.user-state-tabs button.active span { color: #174bb8; background: #d7e7ff; }
+.management-list > article.trash-user { border-style: dashed; background: #fafbfd; }
+.button-danger-outline { color: #b4232f; border: 1px solid #efb5bb; background: #fff; }
+.button-danger-outline:hover { border-color: #d92d3a; background: #fff5f6; }
+.button-danger { color: #fff; background: #c73535; }
+.button-danger:hover { background: #a9252e; }
+.user-action-confirm { width: min(92vw, 520px); }
+.confirm-user { display: flex; align-items: center; gap: 12px; padding: 4px 0 16px; }
+.confirm-user > div { display: flex; flex-direction: column; }
+.confirm-user small { color: var(--muted); }
+.confirmation-note { padding: 15px 16px; border: 1px solid #d8e5f5; border-radius: 13px; color: #465b73; background: #f4f8fd; }
+.confirmation-note.danger { border-color: #efc5c9; color: #7f2630; background: #fff5f6; }
+.confirmation-note strong { display: block; margin-bottom: 5px; color: var(--ink); }
+.confirmation-note.danger strong { color: #9f1f2a; }
+.confirmation-note p { margin: 0; line-height: 1.65; }
+.confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+.user-list-empty { margin-top: 14px; }
+@media (max-width: 600px) {
+  .user-state-tabs { width: 100%; }
+  .user-state-tabs button { flex: 1 0 auto; }
+  .confirm-actions { grid-template-columns: 1fr; }
+  .confirm-actions .button { width: 100%; min-height: 52px; }
+}

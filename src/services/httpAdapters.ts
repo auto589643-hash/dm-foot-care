@@ -75,6 +75,10 @@ export class BackendHttpClient {
     return this.request<T>(path, { method: 'PATCH', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
   }
 
+  async delete<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' })
+  }
+
   private async request<T>(path: string, init: RequestInit, timeoutOverrideMs?: number): Promise<T> {
     const url = new URL(path.replace(/^\//, ''), this.baseUrl)
     const controller = new AbortController()
@@ -364,6 +368,10 @@ export class HttpAdminService implements AdminService {
 
   async setUserStatus(userId: string, status: import('../types.ts').UserRecord['status']): Promise<void> {
     await this.client.patchJson(`/v1/admin/users/${encodeURIComponent(userId)}/status`, { status })
+  }
+
+  async deletePendingUser(userId: string): Promise<void> {
+    await this.client.delete(`/v1/admin/users/${encodeURIComponent(userId)}`)
   }
 
   async resetUserPin(userId: string): Promise<void> {

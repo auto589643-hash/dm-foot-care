@@ -96,6 +96,7 @@ export type AdminKnowledgeWriteInput = Omit<KnowledgeArticle, 'id'> & { id?: str
 export interface AdminService extends AdminReadService {
   saveUser(input: AdminUserWriteInput): Promise<UserRecord>
   setUserStatus(userId: string, status: UserRecord['status']): Promise<void>
+  deletePendingUser(userId: string): Promise<void>
   resetUserPin(userId: string): Promise<void>
   saveDisease(input: AdminDiseaseWriteInput): Promise<Disease>
   setDiseaseActive(diseaseId: string, active: boolean): Promise<void>

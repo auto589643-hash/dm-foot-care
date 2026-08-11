@@ -41,9 +41,10 @@ export default async function handler(req, res) {
     ])
 
     const patientIds = new Set(roles.filter((item) => item.role === 'user' || item.role === 'patient').map((item) => item.user_id))
-    const users = profiles.filter((profile) => patientIds.has(profile.user_id))
+    const users = profiles.filter((profile) => patientIds.has(profile.user_id) && profile.account_status === 'active')
+    const activeUserIds = new Set(users.map((user) => user.user_id))
     const userById = new Map(users.map((user) => [user.user_id, user]))
-    const confirmed = examinations.filter((exam) => patientIds.has(exam.user_id) && exam.status === 'confirmed')
+    const confirmed = examinations.filter((exam) => activeUserIds.has(exam.user_id) && exam.status === 'confirmed')
     const findingsByExam = new Map()
     for (const finding of findings) {
       const list = findingsByExam.get(finding.examination_id) || []
@@ -67,7 +68,7 @@ export default async function handler(req, res) {
     }
 
     const followups = []
-    for (const user of users.filter((item) => item.account_status === 'active')) {
+    for (const user of users) {
       const latest = latestByUser.get(user.user_id)
       const latestFindings = latest ? (findingsByExam.get(latest.id) || []) : []
       const severe = latestFindings.filter((finding) => finding.severity_label_snapshot === 'รุนแรง')
@@ -117,7 +118,7 @@ export default async function handler(req, res) {
     const latestUser = latestExam ? userById.get(latestExam.user_id) : null
 
     return sendJson(res, 200, {
-      activeUsers: users.filter((user) => user.account_status === 'active').length,
+      activeUsers: users.length,
       totalUsers: users.length,
       usersWithHistory,
       followupCount: followups.length,
