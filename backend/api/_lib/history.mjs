@@ -1,5 +1,7 @@
 import { createStorageSignedUrl, supabaseRest } from './supabase.mjs'
 
+const severityRank = { 'เล็กน้อย': 1, 'ปานกลาง': 2, 'รุนแรง': 3 }
+
 function bangkokParts(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
@@ -29,7 +31,17 @@ function statusForClient(status) {
   return status === 'confirmed' ? 'complete' : status === 'draft' ? 'draft' : 'processing'
 }
 
-/** Hydrates each examination with findings and short-lived URLs for private thumbnails. */
+function comparisonFor(currentSeverity, previousSeverity) {
+  if (!previousSeverity) return 'ยังไม่มีข้อมูลเปรียบเทียบ'
+  const current = severityRank[currentSeverity] || 0
+  const previous = severityRank[previousSeverity] || 0
+  if (!current || !previous) return 'ยังไม่มีข้อมูลเปรียบเทียบ'
+  if (current < previous) return 'ดีขึ้น'
+  if (current > previous) return 'แย่ลง'
+  return 'คงที่'
+}
+
+/** Hydrates each examination with findings, real historical comparisons, and private thumbnail URLs. */
 export async function hydrateExaminationHistory(examinations) {
   if (!examinations.length) return []
   const ids = examinations.map((row) => row.id).join(',')
@@ -45,11 +57,12 @@ export async function hydrateExaminationHistory(examinations) {
       name: finding.disease_name_snapshot || 'ไม่ระบุภาวะ',
       detected: true,
       severity: finding.severity_label_snapshot || 'เล็กน้อย',
-      confidence: 100,
-      comparison: 'คงที่',
+      confidence: 0,
+      comparison: 'ยังไม่มีข้อมูลเปรียบเทียบ',
     })
     findingsByExam.set(finding.examination_id, list)
   }
+
   const thumbnailsByExam = new Map()
   await Promise.all(images.filter((image) => image.thumbnail_path).map(async (image) => {
     try {
@@ -58,20 +71,33 @@ export async function hydrateExaminationHistory(examinations) {
       thumbnails[image.position.replace('_', '-')] = url
       thumbnailsByExam.set(image.examination_id, thumbnails)
     } catch (error) {
-      // A missing historical thumbnail must not hide the examination record.
       console.warn('history thumbnail signing skipped', image.examination_id, image.position, error instanceof Error ? error.message : error)
     }
   }))
-  return examinations.map((row) => {
-    const timestamp = row.examined_at || row.created_at
+
+  const hydrated = examinations.map((row) => {
+    const at = row.examined_at || row.created_at
     return {
       id: row.id,
-      date: toDate(timestamp),
-      displayDate: toThaiDate(timestamp),
-      time: toThaiTime(timestamp),
+      date: toDate(at),
+      displayDate: toThaiDate(at),
+      time: toThaiTime(at),
       status: statusForClient(row.status),
       findings: findingsByExam.get(row.id) || [],
       thumbnails: thumbnailsByExam.get(row.id) || {},
+      _timestamp: new Date(at).getTime(),
     }
   })
+
+  const previousByDisease = new Map()
+  for (const exam of [...hydrated].sort((a, b) => a._timestamp - b._timestamp)) {
+    exam.findings = exam.findings.map((finding) => {
+      const previousSeverity = previousByDisease.get(finding.diseaseId)
+      const comparison = comparisonFor(finding.severity, previousSeverity)
+      previousByDisease.set(finding.diseaseId, finding.severity)
+      return { ...finding, comparison }
+    })
+  }
+
+  return hydrated.map(({ _timestamp, ...exam }) => exam)
 }
