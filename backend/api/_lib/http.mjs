@@ -2,7 +2,7 @@ export function setCors(res) {
   const origin = process.env.FRONTEND_ORIGIN || process.env.VERCEL_URL
   if (origin) res.setHeader('Access-Control-Allow-Origin', origin.startsWith('http') ? origin : `https://${origin}`)
   res.setHeader('Access-Control-Allow-Credentials', 'true')
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-dmfc-drive-folder, x-dmfc-image-position, x-dmfc-drive-filename')
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-dmfc-drive-folder, x-dmfc-image-position, x-dmfc-drive-filename, x-dmfc-examination-id')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
 }
 
