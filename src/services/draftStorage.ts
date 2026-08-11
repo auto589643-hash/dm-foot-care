@@ -32,7 +32,7 @@ function indexedDbAvailable(): boolean {
 function openDatabase(): Promise<IDBDatabase> {
   if (!indexedDbAvailable()) return Promise.reject(new Error('IndexedDB is unavailable'))
   if (databasePromise) return databasePromise
-  databasePromise = new Promise((resolve, reject) => {
+  const pending = new Promise<IDBDatabase>((resolve, reject) => {
     const request = window.indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
     request.onupgradeneeded = () => {
       const database = request.result
@@ -41,7 +41,8 @@ function openDatabase(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error('Could not open IndexedDB'))
     request.onblocked = () => reject(new Error('IndexedDB upgrade is blocked'))
-  }).catch((error) => {
+  })
+  databasePromise = pending.catch((error) => {
     databasePromise = null
     throw error
   })
