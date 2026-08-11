@@ -3,7 +3,7 @@ export function setCors(res) {
   if (origin) res.setHeader('Access-Control-Allow-Origin', origin.startsWith('http') ? origin : `https://${origin}`)
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-dmfc-drive-folder, x-dmfc-image-position, x-dmfc-drive-filename')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
 }
 
 export function sendJson(res, status, payload) {

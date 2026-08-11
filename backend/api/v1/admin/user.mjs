@@ -1,5 +1,5 @@
 import { handleOptions, readJsonBody, sendJson, setCors } from '../../_lib/http.mjs'
-import { requireAdminUser, supabaseRest } from '../../_lib/supabase.mjs'
+import { requireAdminUser, supabaseConfig, supabaseRest } from '../../_lib/supabase.mjs'
 
 const USERNAME_PATTERN = /^[A-Z0-9_-]{3,32}$/
 const PIN_PATTERN = /^\d{4}$/
@@ -8,6 +8,12 @@ const ACCOUNT_STATUSES = new Set(['pending', 'active', 'inactive'])
 function badRequest(message) {
   const error = new Error(message)
   error.status = 400
+  return error
+}
+
+function httpError(status, message) {
+  const error = new Error(message)
+  error.status = status
   return error
 }
 
@@ -20,10 +26,12 @@ async function updateUser(userId, body, action) {
   if (action === 'status') {
     const status = String(body.status || '')
     if (!ACCOUNT_STATUSES.has(status)) throw badRequest('สถานะผู้ใช้ไม่ถูกต้อง')
-    await supabaseRest(`/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}`, {
+    const profiles = await supabaseRest(`/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}`, {
       method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ account_status: status, updated_at: new Date().toISOString() }),
     })
+    if (!profiles[0]) throw httpError(404, 'ไม่พบบัญชีผู้ใช้')
     return { status }
   }
 
@@ -64,12 +72,29 @@ async function updateUser(userId, body, action) {
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify(patch),
   })
-  if (!profiles[0]) {
-    const error = new Error('ไม่พบบัญชีผู้ใช้')
-    error.status = 404
-    throw error
-  }
+  if (!profiles[0]) throw httpError(404, 'ไม่พบบัญชีผู้ใช้')
   return profiles[0]
+}
+
+async function deletePendingUser(userId) {
+  const profiles = await supabaseRest(`/rest/v1/profiles?select=user_id,username,account_status&user_id=eq.${encodeURIComponent(userId)}&limit=1`)
+  const profile = profiles[0]
+  if (!profile) throw httpError(404, 'ไม่พบบัญชีผู้ใช้')
+  if (profile.account_status !== 'pending') throw httpError(409, 'ลบได้เฉพาะคำขอที่ยังรออนุมัติเท่านั้น')
+
+  const examinations = await supabaseRest(`/rest/v1/examinations?select=id&user_id=eq.${encodeURIComponent(userId)}&limit=1`)
+  if (examinations.length) throw httpError(409, 'บัญชีนี้มีประวัติการตรวจแล้ว จึงไม่สามารถลบคำขอได้')
+
+  const { url, serviceKey } = supabaseConfig()
+  const response = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}` },
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw httpError(response.status, payload?.msg || payload?.message || 'ไม่สามารถลบบัญชีออกจากระบบยืนยันตัวตนได้')
+  }
+  return { username: profile.username }
 }
 
 export default async function handler(req, res) {
@@ -78,14 +103,21 @@ export default async function handler(req, res) {
   try {
     const session = await requireAdminUser(req, res)
     if (!session) return
-    if (req.method !== 'PATCH') return sendJson(res, 405, { message: 'Method not allowed' })
     const userId = String(req.query?.userId || '')
     if (!userId) return sendJson(res, 400, { message: 'ไม่พบรหัสผู้ใช้' })
+
+    if (req.method === 'DELETE') {
+      const result = await deletePendingUser(userId)
+      return sendJson(res, 200, { ok: true, result })
+    }
+    if (req.method !== 'PATCH') return sendJson(res, 405, { message: 'Method not allowed' })
+
     const result = await updateUser(userId, await readJsonBody(req), String(req.query?.action || ''))
     return sendJson(res, 200, { ok: true, result })
   } catch (error) {
     const status = Number.isInteger(error.status) ? error.status : 500
-    if (status >= 500) console.error('admin user update failed', error)
-    return sendJson(res, status, { message: status >= 500 ? 'ไม่สามารถแก้ไขบัญชีผู้ใช้ได้' : error.message })
+    if (status >= 500) console.error('admin user operation failed', error)
+    const fallback = req.method === 'DELETE' ? 'ไม่สามารถลบคำขอผู้ใช้งานได้' : 'ไม่สามารถแก้ไขบัญชีผู้ใช้ได้'
+    return sendJson(res, status, { message: status >= 500 ? fallback : error.message })
   }
 }
