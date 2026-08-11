@@ -84,6 +84,16 @@ export interface ExaminationRepository {
     }>
     confirmedBy: string
   }): Promise<void>
+  finalizeExamination?(input: {
+    examinationId: string
+    findings: Array<{
+      diseaseId: string
+      severity: Severity | null
+      aiFindingId?: string
+    }>
+    confirmedBy: string
+    reviewChangedCount: number
+  }): Promise<void>
   saveThumbnailReferences(input: {
     examinationId: string
     thumbnails: Record<FootPosition, string>
