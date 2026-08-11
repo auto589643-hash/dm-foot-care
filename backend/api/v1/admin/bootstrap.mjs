@@ -22,13 +22,15 @@ function weekday(value) {
   return new Intl.DateTimeFormat('th-TH', { weekday: 'short', timeZone: 'Asia/Bangkok' }).format(date).replace('.', '')
 }
 
-async function loadDashboard() {
-  const [profiles, roles, examinations, findings] = await Promise.all([
-    supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,account_status'),
-    supabaseRest('/rest/v1/user_roles?select=user_id,role'),
-    supabaseRest('/rest/v1/examinations?select=id,user_id,status,examined_at,created_at&order=created_at.desc'),
-    supabaseRest('/rest/v1/confirmed_findings?select=examination_id,disease_name_snapshot,severity_label_snapshot,confirmed_at'),
-  ])
+async function loadDashboard(sourceRows) {
+  const [profiles, roles, examinations, findings] = sourceRows
+    ? [sourceRows.profiles, sourceRows.roles, sourceRows.examinations, sourceRows.findings]
+    : await Promise.all([
+      supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,account_status'),
+      supabaseRest('/rest/v1/user_roles?select=user_id,role'),
+      supabaseRest('/rest/v1/examinations?select=id,user_id,status,examined_at,created_at&order=created_at.desc'),
+      supabaseRest('/rest/v1/confirmed_findings?select=examination_id,disease_name_snapshot,severity_label_snapshot,confirmed_at'),
+    ])
   const patientIds = new Set(roles.filter((item) => item.role === 'user' || item.role === 'patient').map((item) => item.user_id))
   const users = profiles.filter((profile) => patientIds.has(profile.user_id) && profile.account_status === 'active')
   const activeUserIds = new Set(users.map((user) => user.user_id))
@@ -65,6 +67,16 @@ async function loadDashboard() {
   return { activeUsers: users.length, totalUsers: users.length, usersWithHistory, followupCount: followups.length, severeCount, completedLast7Days, averagePerDay: Number((completedLast7Days / 7).toFixed(1)), activityLast7Days: days, latestExam: latestExam ? { displayDate: thaiDate(timestamp(latestExam)), username: latestUser?.username || '—' } : null, followups: followups.slice(0, 8), recentExaminations }
 }
 
+async function loadSharedAdminRows() {
+  const [profiles, roles, examinations, findings] = await Promise.all([
+    supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
+    supabaseRest('/rest/v1/user_roles?select=user_id,role'),
+    supabaseRest('/rest/v1/examinations?select=id,user_id,status,examined_at,created_at&order=created_at.desc'),
+    supabaseRest('/rest/v1/confirmed_findings?select=examination_id,disease_name_snapshot,severity_label_snapshot,confirmed_at'),
+  ])
+  return { profiles, roles, examinations, findings }
+}
+
 export default async function handler(req, res) {
   if (handleOptions(req, res)) return
   setCors(res)
@@ -72,7 +84,13 @@ export default async function handler(req, res) {
   try {
     const session = await requireAdminUser(req, res)
     if (!session) return
-    const results = await Promise.allSettled([listUsers(), listDiseases(), listArticles(), loadDashboard()])
+    const sharedRows = loadSharedAdminRows()
+    const results = await Promise.allSettled([
+      sharedRows.then((rows) => listUsers(rows)),
+      listDiseases(),
+      listArticles(),
+      sharedRows.then((rows) => loadDashboard(rows)),
+    ])
     if (results.every((result) => result.status === 'rejected')) throw results[0].reason
     const value = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback
     const partial = results.some((result) => result.status === 'rejected')
