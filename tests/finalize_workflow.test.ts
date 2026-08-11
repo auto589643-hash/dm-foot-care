@@ -51,7 +51,24 @@ await assert.rejects(() => finalizeExamination({
   examinationId: 'EX2', images,
   thumbnailService: { async generateAndStore() { throw new Error('storage down') } },
   repository: { ...repository, async updateStatus(_id, status) { failureStatuses.push(status) } },
-}), /Thumbnail generation failed/)
+}), /สร้างภาพสรุปไม่สำเร็จ/)
 assert.equal(failureStatuses.at(-1), 'thumbnail_failed')
+
+
+const persistenceFailureStatuses: string[] = []
+await assert.rejects(() => finalizeExamination({
+  examinationId: 'EX-PERSISTENCE-FAIL',
+  images,
+  thumbnailService,
+  confirmedBy: 'doctor-1',
+  confirmedFindings: [{ diseaseId: 'D001', name: 'ผิวแห้ง', detected: true, severity: 'ปานกลาง', confidence: 90, comparison: 'คงที่' }],
+  precomputedThumbnails: precomputed,
+  repository: {
+    ...repository,
+    async updateStatus(_id, status) { persistenceFailureStatuses.push(status) },
+    async finalizeExamination() { throw new Error('database unavailable') },
+  },
+}), /บันทึกผลตรวจไม่สำเร็จ/)
+assert.deepEqual(persistenceFailureStatuses, [], 'persistence failure must not be mislabeled as thumbnail_failed')
 
 console.log('Finalize workflow tests passed')

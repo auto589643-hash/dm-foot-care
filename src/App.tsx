@@ -726,8 +726,8 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       setCompletedExam(completed)
       onCompleted(completed)
       setStage('summary')
-    } catch {
-      setFinalizeError('บันทึกผลและเตรียมภาพสรุปไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่')
+    } catch (caught) {
+      setFinalizeError(caught instanceof Error && caught.message ? caught.message : 'บันทึกผลตรวจไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่')
     } finally {
       setIsFinalizing(false)
     }
