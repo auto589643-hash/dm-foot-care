@@ -21,6 +21,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node scripts/normalize_hardening_script.mjs
       - run: node scripts/apply_production_hardening.mjs
       - run: npm run lint
       - run: npm run build
