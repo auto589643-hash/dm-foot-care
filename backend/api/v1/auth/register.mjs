@@ -1,6 +1,5 @@
-import crypto from 'node:crypto'
 import { handleOptions, readJsonBody, sendJson, setCors } from '../../_lib/http.mjs'
-import { supabaseConfig, supabaseRest } from '../../_lib/supabase.mjs'
+import { internalAuthEmail, internalAuthPassword, supabaseConfig, supabaseRest } from '../../_lib/supabase.mjs'
 
 const USERNAME_PATTERN = /^[A-Z0-9_-]{3,32}$/
 const PIN_PATTERN = /^\d{4}$/
@@ -34,10 +33,6 @@ function normalizeInput(body) {
   return { username, displayName, dateOfBirth, occupation, pin }
 }
 
-function authEmailForUsername(username) {
-  return `${username.toLowerCase()}@dmfc.local`
-}
-
 async function listAuthUsers() {
   const { url, serviceKey } = supabaseConfig()
   const response = await fetch(`${url}/auth/v1/admin/users?page=1&per_page=1000`, {
@@ -66,9 +61,10 @@ async function createAuthUser(username) {
     method: 'POST',
     headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      email: authEmailForUsername(username),
-      password: crypto.randomBytes(32).toString('base64url'),
+      email: internalAuthEmail(username),
+      password: internalAuthPassword(username),
       email_confirm: true,
+      user_metadata: { username },
     }),
   })
   const payload = await response.json().catch(() => null)
@@ -91,7 +87,7 @@ async function createOrRecoverAuthUser(username) {
     // A previous profile cleanup can leave an Auth identity behind. Reuse only
     // when the identity has no application profile; otherwise this is a real
     // duplicate username and registration must remain blocked.
-    const existingAuthUser = await findAuthUserByEmail(authEmailForUsername(username))
+    const existingAuthUser = await findAuthUserByEmail(internalAuthEmail(username))
     if (!existingAuthUser?.id) throw error
 
     const linkedProfiles = await supabaseRest(`/rest/v1/profiles?select=user_id,username&user_id=eq.${encodeURIComponent(existingAuthUser.id)}&limit=1`)
@@ -99,6 +95,16 @@ async function createOrRecoverAuthUser(username) {
 
     const linkedRoles = await supabaseRest(`/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(existingAuthUser.id)}&limit=1`)
     if (linkedRoles[0]?.role === 'admin') throw conflict('บัญชีนี้ต้องให้ผู้ดูแลระบบตรวจสอบ')
+
+    // Repair recovered identities to the same server-only credential mapping
+    // used by normal sign-in, so the first approved login does not need an
+    // additional Auth admin password update.
+    const { url, serviceKey } = supabaseConfig()
+    await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(existingAuthUser.id)}`, {
+      method: 'PUT',
+      headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ password: internalAuthPassword(username), email_confirm: true }),
+    })
 
     return { user: existingAuthUser, created: false, recovered: true }
   }
