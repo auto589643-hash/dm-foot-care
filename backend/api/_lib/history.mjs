@@ -41,15 +41,16 @@ function comparisonFor(currentSeverity, previousSeverity) {
   return 'คงที่'
 }
 
-/** Hydrates each examination with findings, real historical comparisons, and private thumbnail URLs. */
+/** Hydrates each examination with findings, real historical comparisons, and optional private thumbnail URLs. */
 export async function hydrateExaminationHistory(examinations, options = {}) {
   const { includeThumbnails = true } = options
   if (!examinations.length) return []
   const ids = examinations.map((row) => row.id).join(',')
-  const [findings, images] = await Promise.all([
-    supabaseRest(`/rest/v1/confirmed_findings?select=examination_id,disease_code_snapshot,disease_name_snapshot,severity_label_snapshot,confirmed_at&examination_id=in.(${encodeURIComponent(ids)})&order=confirmed_at.asc`),
-    supabaseRest(`/rest/v1/examination_images?select=examination_id,position,thumbnail_path&examination_id=in.(${encodeURIComponent(ids)})`),
-  ])
+  const findingsPromise = supabaseRest(`/rest/v1/confirmed_findings?select=examination_id,disease_code_snapshot,disease_name_snapshot,severity_label_snapshot,confirmed_at&examination_id=in.(${encodeURIComponent(ids)})&order=confirmed_at.asc`)
+  const imagesPromise = includeThumbnails
+    ? supabaseRest(`/rest/v1/examination_images?select=examination_id,position,thumbnail_path&examination_id=in.(${encodeURIComponent(ids)})`)
+    : Promise.resolve([])
+  const [findings, images] = await Promise.all([findingsPromise, imagesPromise])
   const findingsByExam = new Map()
   for (const finding of findings) {
     const list = findingsByExam.get(finding.examination_id) || []
