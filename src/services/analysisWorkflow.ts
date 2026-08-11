@@ -46,7 +46,9 @@ export class AnalysisPipelineError extends Error {
 
 /**
  * Provider-neutral orchestration for the backend/Edge Function.
- * Original uploads are parallelized, while AI analysis only starts after all four references are persisted.
+ * Original uploads are parallelized and stay in Google Drive. HTTP adapters
+ * may persist the Drive reference in that same upload request, while local/
+ * test adapters keep using the legacy two-step repository path.
  */
 export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise<AnalysisWorkflowResult> {
   const { examinationId, username, images, archive, provider, repository, diseaseMasterVersion, examinedAt } = input
@@ -62,17 +64,15 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
       const uploaded = await Promise.all(missingPositions.map(async (position) => {
         const image = images[position]
         if (!image) throw new Error(`Missing image for ${position}`)
-        const driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
-        await Promise.all([
-          repository.saveImageReference({
-            examinationId,
-            position,
-            driveFolderId,
-            driveFileId,
-            metadata: { contentType: image.type, size: image.size },
-          }),
-          appendAuditSafely(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position }),
-        ])
+        const metadata = { contentType: image.type, size: image.size }
+        let driveFileId: string
+        if (archive.uploadOriginalWithReference) {
+          driveFileId = await archive.uploadOriginalWithReference({ examinationId, folderId: driveFolderId, position, image, metadata })
+        } else {
+          driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
+          await repository.saveImageReference({ examinationId, position, driveFolderId, driveFileId, metadata })
+        }
+        await appendAuditSafely(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position })
         return [position, driveFileId] as const
       }))
       const imageReferences = { ...existing.driveFileIds, ...Object.fromEntries(uploaded) } as Record<FootPosition, string>
@@ -92,13 +92,13 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
     await Promise.all([
       appendAuditSafely(input, 'ai_analysis_completed', 'ai_analysis', analysis.runId, { findingCount: analysis.findings.length }),
       repository.saveAiAnalysis({
-      examinationId,
-      idempotencyKey,
-      provider: 'provider-adapter',
-      model: 'configured-server-model',
-      diseaseMasterRevision: Number.parseInt(diseaseMasterVersion, 10) || 1,
-      rawResult: analysis.rawResult,
-      validation: analysis.validation,
+        examinationId,
+        idempotencyKey,
+        provider: 'provider-adapter',
+        model: 'configured-server-model',
+        diseaseMasterRevision: Number.parseInt(diseaseMasterVersion, 10) || 1,
+        rawResult: analysis.rawResult,
+        validation: analysis.validation,
       }),
     ])
     await appendAuditSafely(input, 'ai_result_recorded', 'ai_analysis', analysis.runId, { validationStatus: analysis.validation.status })
