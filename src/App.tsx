@@ -43,7 +43,7 @@ import {
   X,
 } from 'lucide-react'
 import { footSteps } from './data'
-import { clearExaminationDraft, readExaminationDraft, saveExaminationDraft } from './services/draftStorage'
+import { clearExaminationDraft, readExaminationDraft, saveExaminationDraft, type ExaminationDraftSnapshot } from './services/draftStorage'
 import { photosToBlobs } from './services/photoBlobs'
 import type { AuditLogger } from './services/auditLog'
 import { examinationPositions, runAnalysisWorkflow } from './services/analysisWorkflow'
@@ -440,15 +440,25 @@ function Avatar({ profile }: { profile: Profile }) {
 }
 
 function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
+  const [hasDraft, setHasDraft] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    void readExaminationDraft().then((draft) => {
+      if (!cancelled) setHasDraft(Boolean(draft))
+    }).catch(() => {
+      if (!cancelled) setHasDraft(false)
+    })
+    return () => { cancelled = true }
+  }, [page])
+
   if (page === 'exam') return <ExaminationFlow profile={profile} diseaseRecords={patientDiseases} integrations={integrations} stage={examStage} setStage={setExamStage} onHome={() => setPage('home')} onCompleted={onExamCompleted} />
   if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} />
   if (page === 'knowledge') return <KnowledgePage articles={patientKnowledge} diseaseRecords={patientDiseases} showToast={showToast} knowledgeService={integrations.knowledge} />
-  return <PatientHome profile={profile} examinations={patientExaminations} articles={patientKnowledge} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { const draft = readExaminationDraft(); if (draft) { setExamStage(draft.stage); setPage('exam') } }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
+  return <PatientHome profile={profile} examinations={patientExaminations} articles={patientKnowledge} hasDraft={hasDraft} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { void readExaminationDraft().then((draft) => { if (draft) { setExamStage(draft.stage); setPage('exam') } }) }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
 }
 
-function PatientHome({ profile, examinations: patientExaminations, articles, onStart, onResume, onHistory, onKnowledge }: { profile: Profile; examinations: Examination[]; articles: KnowledgeArticle[]; onStart: () => void; onResume: () => void; onHistory: () => void; onKnowledge: () => void }) {
+function PatientHome({ profile, examinations: patientExaminations, articles, hasDraft, onStart, onResume, onHistory, onKnowledge }: { profile: Profile; examinations: Examination[]; articles: KnowledgeArticle[]; hasDraft: boolean; onStart: () => void; onResume: () => void; onHistory: () => void; onKnowledge: () => void }) {
   const latest = patientExaminations[0]
-  const hasDraft = Boolean(readExaminationDraft())
   const latestFindings = latest?.findings ?? []
   const latestSeverity = latestFindings.length ? latestFindings.reduce((highest, finding) => severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest, latestFindings[0].severity) : null
   const latestSummary = latestFindings.length ? (latestSeverity === 'รุนแรง' ? 'ควรพบแพทย์' : 'ควรติดตาม') : 'ยังไม่พบภาวะ'
@@ -547,9 +557,10 @@ function requireCapturedPhotos(photos: Partial<Record<FootPosition, string>>): R
 }
 
 function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStage, onHome, onCompleted }: { profile: Profile; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; stage: ExamStage; setStage: (stage: ExamStage) => void; onHome: () => void; onCompleted: (exam: Examination) => void }) {
-  const [draftHint, setDraftHint] = useState(() => readExaminationDraft())
-  const [step, setStep] = useState(() => draftHint?.step ?? 0)
-  const [photos, setPhotos] = useState<Partial<Record<FootPosition, string>>>(() => draftHint?.photos ?? {})
+  const [draftHint, setDraftHint] = useState<ExaminationDraftSnapshot | null>(null)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [step, setStep] = useState(0)
+  const [photos, setPhotos] = useState<Partial<Record<FootPosition, string>>>({})
   const [aiFindings, setAiFindings] = useState<Finding[]>([])
   const [confirmedFindings, setConfirmedFindings] = useState<Finding[]>([])
   const [thumbnails, setThumbnails] = useState<Partial<Record<FootPosition, string>>>({})
@@ -565,6 +576,23 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   const [analysisError, setAnalysisError] = useState('')
   const [analysisAttempt, setAnalysisAttempt] = useState(0)
   const [finalizeError, setFinalizeError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    void readExaminationDraft().then((draft) => {
+      if (cancelled) return
+      setDraftHint(draft)
+      if (draft) {
+        setStep(draft.step)
+        setPhotos(draft.photos)
+      }
+    }).catch(() => {
+      if (!cancelled) setDraftHint(null)
+    }).finally(() => {
+      if (!cancelled) setDraftLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const ensureExaminationDraft = async (): Promise<boolean> => {
     if (examinationIdRef.current) return true
@@ -601,9 +629,10 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   }, [stage])
 
   useEffect(() => {
-    if (stage === 'capture' || stage === 'review') saveExaminationDraft({ stage, step, photos })
-    if (stage === 'summary') clearExaminationDraft()
-  }, [stage, step, photos])
+    if (!draftLoaded) return
+    if (stage === 'capture' || stage === 'review') void saveExaminationDraft({ stage, step, photos })
+    if (stage === 'summary') void clearExaminationDraft()
+  }, [draftLoaded, stage, step, photos])
 
   useEffect(() => {
     if (stage !== 'processing') return
@@ -705,10 +734,11 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   }
 
   const reset = () => {
-    clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings([]); setConfirmedFindings([]); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; draftJobRef.current = null; examinationIdRef.current = ''; archiveRef.current = integrations.archive; repositoryRef.current = integrations.repository; thumbnailServiceRef.current = integrations.thumbnails; setStage('intro')
+    void clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setThumbnails({}); setCompletedExam(null); setAiFindings([]); setConfirmedFindings([]); setAnalysisError(''); setFinalizeError(''); setAnalysisAttempt(0); setIsFinalizing(false); thumbnailJobRef.current = null; draftJobRef.current = null; examinationIdRef.current = ''; archiveRef.current = integrations.archive; repositoryRef.current = integrations.repository; thumbnailServiceRef.current = integrations.thumbnails; setStage('intro')
   }
 
-  if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
+  if (!draftLoaded) return <main className="app-boot" aria-live="polite"><div className="boot-card"><BrandMark /><div className="boot-copy"><strong>DM Foot Care</strong><span>กำลังเปิดข้อมูลการตรวจ…</span></div><div className="boot-progress"><span /></div></div></main>
+  if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { void clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
   if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
   if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
   if (stage === 'processing') return <ProcessingScreen key={analysisAttempt} current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
