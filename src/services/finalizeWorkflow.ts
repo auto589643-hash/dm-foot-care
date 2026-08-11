@@ -32,22 +32,39 @@ export class FinalizePipelineError extends Error {
 /** Generate web-only thumbnails after the final clinical result is confirmed. */
 export async function finalizeExamination(input: FinalizeExaminationInput): Promise<Record<FootPosition, string>> {
   const { examinationId, images, thumbnailService, repository, confirmedFindings = [], confirmedBy, auditLogger, actorId, reviewChangedCount = 0, precomputedThumbnails } = input
-  try {
-    // The production HTTP repository can persist confirmed findings, audit
-    // rows and the final examination state server-side in one browser request.
-    // Test/local adapters retain the granular fallback below.
-    if (confirmedBy && repository.finalizeExamination) {
-      const thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
+
+  const markThumbnailFailed = async () => {
+    try {
+      await repository.updateStatus(examinationId, 'thumbnail_failed')
+    } catch {
+      // Preserve the original thumbnail failure if this secondary state write fails.
+    }
+  }
+
+  if (confirmedBy && repository.finalizeExamination) {
+    let thumbnails: Record<FootPosition, string>
+    try {
+      thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
       await repository.saveThumbnailReferences({ examinationId, thumbnails })
+    } catch (cause) {
+      await markThumbnailFailed()
+      throw new FinalizePipelineError('สร้างภาพสรุปไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่', examinationId, cause)
+    }
+
+    try {
       await repository.finalizeExamination({
         examinationId,
         confirmedBy,
         reviewChangedCount,
         findings: confirmedFindings.map((finding) => ({ diseaseId: finding.diseaseId, severity: finding.severity })),
       })
-      return thumbnails
+    } catch (cause) {
+      throw new FinalizePipelineError('บันทึกผลตรวจไม่สำเร็จ กรุณาลองส่งผลอีกครั้งโดยไม่ต้องถ่ายภาพใหม่', examinationId, cause)
     }
+    return thumbnails
+  }
 
+  try {
     await repository.updateStatus(examinationId, 'thumbnailing')
     if (confirmedBy && confirmedFindings.length) {
       if (repository.saveConfirmedFindings) {
@@ -65,20 +82,27 @@ export async function finalizeExamination(input: FinalizeExaminationInput): Prom
         })))
       }
     }
-    const thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
+  } catch (cause) {
+    throw new FinalizePipelineError('เตรียมการบันทึกผลตรวจไม่สำเร็จ กรุณาลองอีกครั้ง', examinationId, cause)
+  }
+
+  let thumbnails: Record<FootPosition, string>
+  try {
+    thumbnails = precomputedThumbnails ?? await thumbnailService.generateAndStore(examinationId, images)
     await repository.saveThumbnailReferences({ examinationId, thumbnails })
+  } catch (cause) {
+    await markThumbnailFailed()
+    throw new FinalizePipelineError('สร้างภาพสรุปไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่', examinationId, cause)
+  }
+
+  try {
     if (auditLogger && reviewChangedCount > 0) {
       await auditLogger.append({ actorId: actorId ?? null, eventType: 'human_review_edited', entityType: 'finding', entityId: examinationId, payload: { changedCount: reviewChangedCount } })
     }
     await auditLogger?.append({ actorId: actorId ?? null, eventType: 'final_result_submitted', entityType: 'examination', entityId: examinationId, payload: { confirmedFindingCount: confirmedFindings.length } })
     await repository.updateStatus(examinationId, 'confirmed')
-    return thumbnails
   } catch (cause) {
-    try {
-      await repository.updateStatus(examinationId, 'thumbnail_failed')
-    } catch {
-      // Preserve the original failure while the backend logs this secondary state-write failure.
-    }
-    throw new FinalizePipelineError('Thumbnail generation failed after confirmation', examinationId, cause)
+    throw new FinalizePipelineError('บันทึกผลตรวจไม่สำเร็จ กรุณาลองส่งผลอีกครั้งโดยไม่ต้องถ่ายภาพใหม่', examinationId, cause)
   }
+  return thumbnails
 }

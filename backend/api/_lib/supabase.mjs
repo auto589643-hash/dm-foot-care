@@ -268,25 +268,35 @@ export async function signInWithUsername(username, pin) {
   })
   if (!pinCheck.ok || (await pinCheck.json()) !== true) return null
 
-  const email = internalAuthEmail(normalizedUsername)
+  const preferredEmail = internalAuthEmail(normalizedUsername)
   const internalPassword = internalAuthPassword(normalizedUsername)
-  let tokenResponse = await requestPasswordToken(url, publishableKey, email, internalPassword)
+  let signInEmail = preferredEmail
+  let tokenResponse = await requestPasswordToken(url, publishableKey, signInEmail, internalPassword)
 
-  // Existing accounts created before deterministic internal credentials may
-  // still have a random Supabase password. Repair once, then future logins use
-  // the direct token path without an admin user read/write round trip.
+  // Legacy accounts may use an internal Auth email that predates the visible
+  // username convention. Resolve the immutable Auth user id only on the slow
+  // fallback path, repair its password, then authenticate with its real email.
   if (!tokenResponse.ok) {
+    const authUserResponse = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(profile.user_id)}`, {
+      headers,
+    })
+    if (!authUserResponse.ok) return null
+    const authUser = await authUserResponse.json()
+    signInEmail = String(authUser?.email || '').trim().toLowerCase()
+    if (!signInEmail) return null
+
     const passwordUpdate = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(profile.user_id)}`, {
       method: 'PUT',
       headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({ password: internalPassword, email_confirm: true }),
     })
     if (!passwordUpdate.ok) return null
-    tokenResponse = await requestPasswordToken(url, publishableKey, email, internalPassword)
+    tokenResponse = await requestPasswordToken(url, publishableKey, signInEmail, internalPassword)
   }
 
   if (!tokenResponse.ok) return null
   const token = await tokenResponse.json()
+  if (!token?.user?.id || token.user.id !== profile.user_id) return null
   const roleResponse = await fetch(`${url}/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(profile.user_id)}&limit=1`, { headers })
   if (!roleResponse.ok) throw new Error(`Role request failed (${roleResponse.status})`)
   const roles = await roleResponse.json()

@@ -650,15 +650,6 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     const draftReadyJob = examinationIdRef.current ? Promise.resolve(true) : (draftJobRef.current ?? Promise.resolve(false))
     void Promise.all([draftReadyJob, photosToBlobs(capturedPhotos)]).then(([draftReady, images]) => {
       if (!draftReady) throw new Error('Could not initialize examination draft')
-      if (!thumbnailJobRef.current) {
-        const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
-        thumbnailJobRef.current = thumbnailJob
-        void thumbnailJob.then((prepared) => setThumbnails(prepared)).catch((error) => {
-          thumbnailJobRef.current = null
-          console.warn('Thumbnail preparation will be retried after review', error)
-        })
-      }
-
       return runAnalysisWorkflow({
         examinationId: examinationIdRef.current,
         username: profile.username,
@@ -672,9 +663,19 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
         idempotencyKey: `${examinationIdRef.current}:attempt-${analysisAttempt}`,
         auditLogger: integrations.audit,
         actorId: profile.id,
-      })
-    }).then((analysis) => {
+      }).then((analysis) => ({ analysis, images }))
+    }).then(({ analysis, images }) => {
       if (cancelled) return
+      if (!thumbnailJobRef.current) {
+        // runAnalysisWorkflow has completed the original Drive uploads and the
+        // examination_images references before thumbnail persistence starts.
+        const thumbnailJob = thumbnailServiceRef.current.generateAndStore(examinationIdRef.current, images)
+        thumbnailJobRef.current = thumbnailJob
+        void thumbnailJob.then((prepared) => setThumbnails(prepared)).catch((error) => {
+          thumbnailJobRef.current = null
+          console.warn('Thumbnail preparation will be retried after review', error)
+        })
+      }
       setAiFindings(analysis.findings)
       setConfirmedFindings(cloneFindings(analysis.findings))
       setProcessStep(3)
@@ -726,8 +727,8 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       setCompletedExam(completed)
       onCompleted(completed)
       setStage('summary')
-    } catch {
-      setFinalizeError('บันทึกผลและเตรียมภาพสรุปไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่')
+    } catch (caught) {
+      setFinalizeError(caught instanceof Error && caught.message ? caught.message : 'บันทึกผลตรวจไม่สำเร็จ กรุณาลองอีกครั้งโดยไม่ต้องถ่ายภาพใหม่')
     } finally {
       setIsFinalizing(false)
     }
