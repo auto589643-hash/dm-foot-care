@@ -4,6 +4,7 @@ import App from './App'
 import './styles.css'
 import './impeccable.css'
 import './legacy65925.css'
+import './accessibility-overrides.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

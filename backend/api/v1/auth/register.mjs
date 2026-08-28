@@ -21,16 +21,23 @@ function normalizeInput(body) {
   const displayName = String(body.displayName || '').trim()
   const dateOfBirth = String(body.dateOfBirth || '').trim()
   const occupation = String(body.occupation || '').trim()
+  const sex = String(body.sex || '').trim()
+  const diabetesYears = Number(body.diabetesYears)
+  const latestHba1cRaw = body.latestHba1c
+  const latestHba1c = latestHba1cRaw === '' || latestHba1cRaw == null ? null : Number(latestHba1cRaw)
   const pin = String(body.pin || '').trim()
   if (!USERNAME_PATTERN.test(username)) throw badRequest('Username ต้องมี 3-32 ตัวอักษร และใช้ A-Z, 0-9, _ หรือ - เท่านั้น')
   if (!displayName || displayName.length > 160) throw badRequest('กรุณาระบุชื่อ-นามสกุล')
   if (!occupation || occupation.length > 160) throw badRequest('กรุณาระบุอาชีพ')
+  if (!['male', 'female', 'other', 'prefer_not_to_say'].includes(sex)) throw badRequest('กรุณาระบุเพศ')
+  if (!Number.isInteger(diabetesYears) || diabetesYears < 0 || diabetesYears > 100) throw badRequest('จำนวนปีที่เป็นเบาหวานต้องอยู่ระหว่าง 0-100 ปี')
+  if (latestHba1c != null && (!Number.isFinite(latestHba1c) || latestHba1c <= 0 || latestHba1c > 30)) throw badRequest('HbA1c ล่าสุดไม่ถูกต้อง')
   if (!PIN_PATTERN.test(pin)) throw badRequest('PIN ต้องเป็นตัวเลข 4 หลัก')
   const date = new Date(`${dateOfBirth}T00:00:00Z`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== dateOfBirth || date > new Date()) {
     throw badRequest('วันเดือนปีเกิดไม่ถูกต้อง')
   }
-  return { username, displayName, dateOfBirth, occupation, pin }
+  return { username, displayName, dateOfBirth, occupation, sex, diabetesYears, latestHba1c, pin }
 }
 
 async function listAuthUsers() {
@@ -155,7 +162,10 @@ export default async function handler(req, res) {
         display_name: input.displayName,
         date_of_birth: input.dateOfBirth,
         occupation: input.occupation,
-        account_status: 'pending',
+        sex: input.sex,
+        diabetes_years: input.diabetesYears,
+        latest_hba1c: input.latestHba1c,
+        account_status: 'active',
         pin_hash: pinHash,
       }),
     })
@@ -168,9 +178,9 @@ export default async function handler(req, res) {
 
     return sendJson(res, 201, {
       ok: true,
-      status: 'pending',
+      status: 'active',
       recovered: authResult.recovered,
-      message: 'ลงทะเบียนสำเร็จ กรุณารอผู้ดูแลระบบอนุมัติบัญชี',
+      message: 'ลงทะเบียนสำเร็จ บัญชีพร้อมใช้งานทันที',
     })
   } catch (error) {
     if (applicationRowsStarted && authUser?.id) await cleanupApplicationRows(authUser.id)

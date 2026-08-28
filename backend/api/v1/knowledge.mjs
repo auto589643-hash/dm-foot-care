@@ -4,14 +4,15 @@ import { createStorageSignedUrl, requireSupabaseUser, supabaseRest } from '../_l
 const validTones = new Set(['blue', 'teal', 'amber'])
 
 function parseBody(value) {
-  if (Array.isArray(value)) return { care: value.map(String), treatment: '', recommendation: '', tone: 'blue' }
+  if (Array.isArray(value)) return { care: value.map(String), treatment: '', recommendation: '', youtubeUrl: '', tone: 'blue' }
   if (value && typeof value === 'object') return {
     care: Array.isArray(value.care) ? value.care.map(String) : [],
     treatment: String(value.treatment || ''),
     recommendation: String(value.recommendation || ''),
+    youtubeUrl: String(value.youtubeUrl || ''),
     tone: validTones.has(value.tone) ? value.tone : 'blue',
   }
-  return { care: [], treatment: '', recommendation: '', tone: 'blue' }
+  return { care: [], treatment: '', recommendation: '', youtubeUrl: '', tone: 'blue' }
 }
 
 function readTimeFor(article) {
@@ -66,6 +67,7 @@ export default async function handler(req, res) {
         care: content.care,
         treatment: content.treatment || undefined,
         recommendation: content.recommendation || undefined,
+        youtubeUrl: content.youtubeUrl || undefined,
         image,
         readTime: readTimeFor(article),
         tone: validTones.has(content.tone) ? content.tone : severity === 'รุนแรง' ? 'amber' : severity === 'ปานกลาง' ? 'teal' : 'blue',
