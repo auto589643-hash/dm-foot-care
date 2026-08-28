@@ -379,6 +379,11 @@ export class HttpKnowledgeLibraryService implements KnowledgeLibraryService {
     if (Array.isArray(response)) return { articles: response, diseases: [] }
     return { articles: response.articles ?? [], diseases: normalizeDiseaseList(response.diseases) }
   }
+  async listVideos(): Promise<import('../types.ts').CareVideo[]> {
+    const response = await this.client.get<{ videos?: import('../types.ts').CareVideo[] } | import('../types.ts').CareVideo[]>('/v1/care-videos')
+    return Array.isArray(response) ? response : response.videos ?? []
+  }
+
   async listSavedArticleIds(): Promise<string[]> {
     const response = await this.client.get<{ articleIds?: string[] }>('/v1/knowledge/saved')
     return Array.isArray(response.articleIds) ? response.articleIds : []
@@ -395,9 +400,9 @@ export class HttpAdminService implements AdminService {
     this.client = client
   }
 
-  async getBootstrap(): Promise<{ users: import('../types.ts').UserRecord[]; diseases: import('../types.ts').Disease[]; articles: import('../types.ts').KnowledgeArticle[]; dashboard: import('../types.ts').AdminDashboard | null; partial: boolean }> {
-    const response = await this.client.get<{ users?: import('../types.ts').UserRecord[]; diseases?: unknown; articles?: import('../types.ts').KnowledgeArticle[]; dashboard?: import('../types.ts').AdminDashboard | null; partial?: boolean }>('/v1/admin/bootstrap')
-    return { users: response.users ?? [], diseases: normalizeDiseaseList(response.diseases), articles: response.articles ?? [], dashboard: response.dashboard ?? null, partial: Boolean(response.partial) }
+  async getBootstrap(): Promise<{ users: import('../types.ts').UserRecord[]; diseases: import('../types.ts').Disease[]; articles: import('../types.ts').KnowledgeArticle[]; videos: import('../types.ts').CareVideo[]; dashboard: import('../types.ts').AdminDashboard | null; partial: boolean }> {
+    const response = await this.client.get<{ users?: import('../types.ts').UserRecord[]; diseases?: unknown; articles?: import('../types.ts').KnowledgeArticle[]; videos?: import('../types.ts').CareVideo[]; dashboard?: import('../types.ts').AdminDashboard | null; partial?: boolean }>('/v1/admin/bootstrap')
+    return { users: response.users ?? [], diseases: normalizeDiseaseList(response.diseases), articles: response.articles ?? [], videos: response.videos ?? [], dashboard: response.dashboard ?? null, partial: Boolean(response.partial) }
   }
 
   async getDashboard(): Promise<import('../types.ts').AdminDashboard> {
@@ -434,6 +439,10 @@ export class HttpAdminService implements AdminService {
 
   async listKnowledge(): Promise<import('../types.ts').KnowledgeArticle[]> {
     return readArrayResponse(await this.client.get<import('../types.ts').KnowledgeArticle[] | { articles?: import('../types.ts').KnowledgeArticle[] }>('/v1/admin/knowledge'), 'articles')
+  }
+
+  async listCareVideos(): Promise<import('../types.ts').CareVideo[]> {
+    return readArrayResponse(await this.client.get<import('../types.ts').CareVideo[] | { videos?: import('../types.ts').CareVideo[] }>('/v1/admin/care-videos'), 'videos')
   }
 
   async saveUser(input: import('./contracts.ts').AdminUserWriteInput): Promise<import('../types.ts').UserRecord> {
@@ -478,6 +487,14 @@ export class HttpAdminService implements AdminService {
       ? await this.client.patchJson<import('../types.ts').KnowledgeArticle | { article?: import('../types.ts').KnowledgeArticle }>(path, input)
       : await this.client.postJson<import('../types.ts').KnowledgeArticle | { article?: import('../types.ts').KnowledgeArticle }>(path, input)
     return readObjectResponse(response, 'article')
+  }
+
+  async saveCareVideo(input: import('./contracts.ts').AdminCareVideoWriteInput): Promise<import('../types.ts').CareVideo> {
+    const path = input.id ? `/v1/admin/care-videos/${encodeURIComponent(input.id)}` : '/v1/admin/care-videos'
+    const response = input.id
+      ? await this.client.patchJson<import('../types.ts').CareVideo | { video?: import('../types.ts').CareVideo }>(path, input)
+      : await this.client.postJson<import('../types.ts').CareVideo | { video?: import('../types.ts').CareVideo }>(path, input)
+    return readObjectResponse(response, 'video')
   }
 }
 

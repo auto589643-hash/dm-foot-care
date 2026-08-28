@@ -1,4 +1,4 @@
-import type { AdminDashboard, Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
+import type { AdminDashboard, CareVideo, Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
 import type { AiValidationResult } from './aiValidator.ts'
 
 export interface AuthService {
@@ -103,12 +103,13 @@ export interface ExaminationRepository {
 
 export interface KnowledgeLibraryService {
   listPublished(options?: { limit?: number; includeDiseaseImages?: boolean }): Promise<{ articles: KnowledgeArticle[]; diseases: Disease[] }>
+  listVideos(): Promise<CareVideo[]>
   listSavedArticleIds(): Promise<string[]>
   setSaved(articleId: string, saved: boolean): Promise<void>
 }
 
 export interface AdminReadService {
-  getBootstrap(): Promise<{ users: UserRecord[]; diseases: Disease[]; articles: KnowledgeArticle[]; dashboard: AdminDashboard | null; partial: boolean }>
+  getBootstrap(): Promise<{ users: UserRecord[]; diseases: Disease[]; articles: KnowledgeArticle[]; videos: CareVideo[]; dashboard: AdminDashboard | null; partial: boolean }>
   listUsers(): Promise<UserRecord[]>
   listUserExaminations(userId: string): Promise<Examination[]>
   getExaminationThumbnails(examinationId: string): Promise<Partial<Record<FootPosition, string>>>
@@ -116,12 +117,14 @@ export interface AdminReadService {
   getExaminationImage(examinationId: string, position: FootPosition): Promise<string>
   listDiseases(): Promise<Disease[]>
   listKnowledge(): Promise<KnowledgeArticle[]>
+  listCareVideos(): Promise<CareVideo[]>
   getDashboard(): Promise<AdminDashboard>
 }
 
 export type AdminUserWriteInput = Omit<UserRecord, 'id' | 'age' | 'lastExam' | 'pinConfigured'> & { id?: string; pin?: string }
 export type AdminDiseaseWriteInput = Omit<Disease, 'id'> & { id?: string }
 export type AdminKnowledgeWriteInput = Omit<KnowledgeArticle, 'id'> & { id?: string }
+export type AdminCareVideoWriteInput = Omit<CareVideo, 'id'> & { id?: string }
 
 export interface AdminService extends AdminReadService {
   saveUser(input: AdminUserWriteInput): Promise<UserRecord>
@@ -131,6 +134,7 @@ export interface AdminService extends AdminReadService {
   saveDisease(input: AdminDiseaseWriteInput): Promise<Disease>
   setDiseaseActive(diseaseId: string, active: boolean): Promise<void>
   saveKnowledge(input: AdminKnowledgeWriteInput): Promise<KnowledgeArticle>
+  saveCareVideo(input: AdminCareVideoWriteInput): Promise<CareVideo>
 }
 
 export const integrationGuardrails = {

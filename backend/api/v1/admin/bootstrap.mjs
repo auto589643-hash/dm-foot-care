@@ -3,6 +3,7 @@ import { requireAdminUser, supabaseRest } from '../../_lib/supabase.mjs'
 import { listUsers } from './users.mjs'
 import { listDiseases } from './diseases.mjs'
 import { listArticles } from './knowledge.mjs'
+import { listCareVideos } from './care-videos.mjs'
 
 const dayMs = 86_400_000
 function timestamp(row) { return row.examined_at || row.created_at || null }
@@ -90,6 +91,7 @@ export default async function handler(req, res) {
       sharedRows.then((rows) => listUsers(rows)),
       listDiseases(),
       listArticles(),
+      listCareVideos(),
       sharedRows.then((rows) => loadDashboard(rows)),
     ])
     if (results.every((result) => result.status === 'rejected')) throw results[0].reason
@@ -100,7 +102,7 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store')
     res.setHeader('Server-Timing', `admin-bootstrap;dur=${totalMs}`)
     console.info(JSON.stringify({ event: 'dmfc_admin_bootstrap_timing', partial, totalMs }))
-    return sendJson(res, 200, { users: value(0, []), diseases: value(1, []), articles: value(2, []), dashboard: value(3, null), partial })
+    return sendJson(res, 200, { users: value(0, []), diseases: value(1, []), articles: value(2, []), videos: value(3, []), dashboard: value(4, null), partial })
   } catch (error) {
     res.setHeader('Server-Timing', `admin-bootstrap;dur=${Date.now() - startedAt}`)
     console.error('admin bootstrap failed', error)

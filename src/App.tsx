@@ -54,7 +54,7 @@ import { evaluateImageQuality, type ImageQualityResult } from './services/imageQ
 import { createRuntimeIntegrationState, type RuntimeIntegrations } from './services/runtimeIntegrations'
 import { createAnalysisImages } from './services/thumbnailService'
 import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, KnowledgeLibraryService, OriginalImageArchive, ThumbnailService } from './services/contracts'
-import type { AdminDashboard, AdminDashboardRecentExam, Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, RegistrationInput, Sex, Severity, UserRecord } from './types'
+import type { AdminDashboard, AdminDashboardRecentExam, CareVideo, Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, RegistrationInput, Sex, Severity, UserRecord } from './types'
 
 type ExamStage = 'intro' | 'capture' | 'review' | 'processing' | 'human-review' | 'summary'
 type HistoryView = 'list' | 'calendar' | 'insight'
@@ -85,6 +85,7 @@ const patientNav: { page: Page; label: string; icon: typeof Home }[] = [
   { page: 'exam', label: 'ตรวจเท้า', icon: ScanLine },
   { page: 'history', label: 'ประวัติ', icon: History },
   { page: 'knowledge', label: 'คำแนะนำการดูแลเท้า', icon: BookOpen },
+  { page: 'videos', label: 'วิดีโอแนะนำการดูแลเท้า', icon: Video },
 ]
 
 const doctorNav: { page: Page; label: string; icon: typeof Home }[] = [
@@ -92,6 +93,7 @@ const doctorNav: { page: Page; label: string; icon: typeof Home }[] = [
   { page: 'users', label: 'ผู้ใช้งาน', icon: Users },
   { page: 'diseases', label: 'รายการภาวะ', icon: Stethoscope },
   { page: 'admin-knowledge', label: 'คำแนะนำการดูแลเท้า', icon: Library },
+  { page: 'admin-videos', label: 'วิดีโอแนะนำการดูแลเท้า', icon: Video },
 ]
 
 function cloneFindings(findings: Finding[]): Finding[] {
@@ -130,6 +132,8 @@ function App() {
   const [examStage, setExamStage] = useState<ExamStage>('intro')
   const [patientExaminations, setPatientExaminations] = useState<Examination[]>([])
   const [patientKnowledge, setPatientKnowledge] = useState<KnowledgeArticle[]>([])
+  const [patientVideos, setPatientVideos] = useState<CareVideo[]>([])
+  const [patientVideosLoaded, setPatientVideosLoaded] = useState(false)
   const [patientDiseases, setPatientDiseases] = useState<Disease[]>([])
   const [historyThumbnailsLoaded, setHistoryThumbnailsLoaded] = useState(false)
   const [patientKnowledgeMode, setPatientKnowledgeMode] = useState<'none' | 'featured' | 'full'>('none')
@@ -161,6 +165,16 @@ function App() {
       setPatientKnowledgeMode((current) => featuredOnly && current === 'full' ? 'full' : featuredOnly ? 'featured' : 'full')
     } catch {
       // Keep the patient shell usable with the last known content if the API is unavailable.
+    }
+  }, [integrations])
+
+  const loadPatientVideos = useCallback(async () => {
+    if (!integrations?.knowledge) return
+    try {
+      setPatientVideos(await integrations.knowledge.listVideos())
+      setPatientVideosLoaded(true)
+    } catch {
+      // Keep the last video list visible if the endpoint is temporarily unavailable.
     }
   }, [integrations])
 
@@ -210,6 +224,8 @@ function App() {
     setProfile(null)
     setPatientExaminations([])
     setPatientKnowledge([])
+    setPatientVideos([])
+    setPatientVideosLoaded(false)
     setPatientDiseases([])
     setHistoryThumbnailsLoaded(false)
     setPatientKnowledgeMode('none')
@@ -224,6 +240,7 @@ function App() {
     if (profile?.role === 'user') {
       if (nextPage === 'history' && !historyThumbnailsLoaded) void loadPatientExaminations(true)
       if (nextPage === 'knowledge' && patientKnowledgeMode !== 'full') void loadPatientKnowledge(false)
+      if (nextPage === 'videos' && !patientVideosLoaded) void loadPatientVideos()
     }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -256,6 +273,7 @@ function App() {
               setExamStage={setExamStage}
               examinations={patientExaminations}
               knowledgeArticles={patientKnowledge}
+              careVideos={patientVideos}
               diseaseRecords={patientDiseases}
               integrations={integrations}
               onExamCompleted={(exam) => setPatientExaminations((current) => [exam, ...current.filter((item) => item.id !== exam.id)])}
@@ -472,7 +490,7 @@ function Avatar({ profile }: { profile: Profile }) {
   return <span className={profile.role === 'admin' ? 'avatar doctor' : 'avatar'} aria-hidden="true">{profile.role === 'admin' ? 'AD' : profile.displayName.slice(0, 2)}</span>
 }
 
-function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
+function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, careVideos: patientVideos, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; careVideos: CareVideo[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
   const [hasDraft, setHasDraft] = useState(false)
   useEffect(() => {
     let cancelled = false
@@ -487,6 +505,7 @@ function PatientPages({ profile, page, setPage, examStage, setExamStage, examina
   if (page === 'exam') return <ExaminationFlow profile={profile} diseaseRecords={patientDiseases} integrations={integrations} stage={examStage} setStage={setExamStage} onHome={() => setPage('home')} onCompleted={onExamCompleted} />
   if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} />
   if (page === 'knowledge') return <KnowledgePage articles={patientKnowledge} diseaseRecords={patientDiseases} showToast={showToast} knowledgeService={integrations.knowledge} />
+  if (page === 'videos') return <CareVideoPage videos={patientVideos} />
   return <PatientHome profile={profile} examinations={patientExaminations} articles={patientKnowledge} hasDraft={hasDraft} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { void readExaminationDraft().then((draft) => { if (draft) { setExamStage(draft.stage); setPage('exam') } }) }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
 }
 
@@ -496,7 +515,7 @@ function PatientHome({ profile, examinations: patientExaminations, articles, has
   const latestSeverity = latestFindings.length ? latestFindings.reduce((highest, finding) => severityRank[finding.severity] > severityRank[highest] ? finding.severity : highest, latestFindings[0].severity) : null
   const latestSummary = latestFindings.length ? (latestSeverity === 'รุนแรง' ? 'ควรพบแพทย์' : 'ควรติดตาม') : 'ยังไม่พบภาวะ'
   const homeTrend = buildHomeTrend(patientExaminations)
-  const featuredArticle = articles.find((article) => !article.youtubeUrl) ?? articles[0]
+  const featuredArticle = articles[0]
   return (
     <div className="page patient-home">
       <section className="welcome-row reveal">
@@ -1212,30 +1231,37 @@ function HistoricalPhotoViewer({ position, photo, exam, original = false, onClos
   const label = footSteps.find((step) => step.id === position)?.label ?? position
   return <div className="modal-backdrop historical-photo-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal photo-viewer historical-photo-viewer" role="dialog" aria-modal="true" aria-labelledby="historical-photo-title"><header><div><span className="eyebrow">{original ? 'ภาพต้นฉบับจาก Google Drive' : 'ภาพจากผลตรวจ'} · {exam.displayDate}</span><h2 id="historical-photo-title">{label}</h2><p>{exam.time} น. · {exam.id}</p></div><button className="icon-button" type="button" aria-label="ปิดภาพ" onClick={onClose}><X size={21} /></button></header><div className="photo-viewer-canvas" style={photo ? { backgroundImage: 'url(' + photo + ')' } : undefined}>{!photo ? <Footprints size={42} /> : null}</div><p className="photo-viewer-note">{original ? 'ภาพต้นฉบับจากการตรวจครั้งนี้ โหลดเมื่อกดดูภาพใหญ่เท่านั้น' : 'ภาพสรุปจากการตรวจครั้งนี้ ใช้สำหรับดูรายละเอียดและติดตามผลย้อนหลัง'}</p><button className="button button-primary" type="button" onClick={onClose}>กลับไปดูผลตรวจ</button></section></div>
 }
-function getYoutubeEmbedUrl(value?: string): string | null {
+function getYoutubeVideoId(value?: string): string | null {
   if (!value) return null
   try {
     const parsed = new URL(value)
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '')
     let videoId = ''
-    if (host === 'youtu.be') {
-      videoId = parsed.pathname.split('/').filter(Boolean)[0] ?? ''
-    } else if (host === 'youtube.com' || host === 'm.youtube.com') {
+    if (host === 'youtu.be') videoId = parsed.pathname.split('/').filter(Boolean)[0] ?? ''
+    else if (host === 'youtube.com' || host === 'm.youtube.com') {
       videoId = parsed.searchParams.get('v') ?? ''
       if (!videoId) {
         const segments = parsed.pathname.split('/').filter(Boolean)
         if (['embed', 'shorts', 'live'].includes(segments[0] ?? '')) videoId = segments[1] ?? ''
       }
     }
-    if (!/^[A-Za-z0-9_-]{6,32}$/.test(videoId)) return null
-    return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?rel=0&playsinline=1`
+    return /^[A-Za-z0-9_-]{6,32}$/.test(videoId) ? videoId : null
   } catch {
     return null
   }
 }
 
+function getYoutubeEmbedUrl(value?: string): string | null {
+  const videoId = getYoutubeVideoId(value)
+  return videoId ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?rel=0&playsinline=1` : null
+}
+
+function getYoutubeThumbnailUrl(value?: string): string | null {
+  const videoId = getYoutubeVideoId(value)
+  return videoId ? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg` : null
+}
+
 function KnowledgePage({ articles, diseaseRecords, showToast, knowledgeService }: { articles: KnowledgeArticle[]; diseaseRecords: Disease[]; showToast: (text: string) => void; knowledgeService: KnowledgeLibraryService }) {
-  const [mode, setMode] = useState<'article' | 'video'>('article')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('ทั้งหมด')
   const [diseaseFilter, setDiseaseFilter] = useState('ทั้งหมด')
@@ -1244,12 +1270,10 @@ function KnowledgePage({ articles, diseaseRecords, showToast, knowledgeService }
   const [savedIds, setSavedIds] = useState<Set<string>>(() => new Set())
   const [savingId, setSavingId] = useState<string | null>(null)
   useEffect(() => { let cancelled = false; void knowledgeService.listSavedArticleIds().then((ids) => { if (!cancelled) setSavedIds(new Set(ids)) }).catch(() => { if (!cancelled) showToast('โหลดรายการที่บันทึกไว้ไม่สำเร็จ') }); return () => { cancelled = true } }, [knowledgeService, showToast])
-  const modeArticles = useMemo(() => articles.filter((article) => mode === 'video' ? Boolean(article.youtubeUrl) : !article.youtubeUrl), [articles, mode])
-  const categories = ['ทั้งหมด', ...new Set(modeArticles.map((article) => article.category))]
+  const categories = ['ทั้งหมด', ...new Set(articles.map((article) => article.category))]
   const diseaseOptions = ['ทั้งหมด', ...diseaseRecords.map((disease) => disease.id)]
   const severityOptions = ['ทั้งหมด', 'ทุกระดับ', 'เล็กน้อย', 'ปานกลาง', 'รุนแรง'] as const
-  const filtered = useMemo(() => modeArticles.filter((article) => (category === 'ทั้งหมด' || article.category === category) && (diseaseFilter === 'ทั้งหมด' || article.diseaseId === diseaseFilter) && (severityFilter === 'ทั้งหมด' || article.severity === severityFilter) && `${article.title} ${article.summary} ${article.diseaseId ?? ''}`.toLowerCase().includes(query.toLowerCase())), [modeArticles, query, category, diseaseFilter, severityFilter])
-  const changeMode = (nextMode: 'article' | 'video') => { setMode(nextMode); setCategory('ทั้งหมด'); setQuery(''); setSelected(null) }
+  const filtered = useMemo(() => articles.filter((article) => (category === 'ทั้งหมด' || article.category === category) && (diseaseFilter === 'ทั้งหมด' || article.diseaseId === diseaseFilter) && (severityFilter === 'ทั้งหมด' || article.severity === severityFilter) && `${article.title} ${article.summary} ${article.diseaseId ?? ''}`.toLowerCase().includes(query.toLowerCase())), [articles, query, category, diseaseFilter, severityFilter])
   const toggleSaved = async (article: KnowledgeArticle) => {
     const wasSaved = savedIds.has(article.id); const nextSaved = !wasSaved
     setSavedIds((current) => { const next = new Set(current); if (nextSaved) next.add(article.id); else next.delete(article.id); return next })
@@ -1258,18 +1282,30 @@ function KnowledgePage({ articles, diseaseRecords, showToast, knowledgeService }
     catch { setSavedIds((current) => { const next = new Set(current); if (wasSaved) next.add(article.id); else next.delete(article.id); return next }); showToast('บันทึกรายการไม่สำเร็จ ระบบคืนสถานะเดิมแล้ว') }
     finally { setSavingId(null) }
   }
-  return <div className="page knowledge-page"><PageTitle eyebrow="ความรู้สำหรับการดูแล" title="คำแนะนำการดูแลเท้า" description="คำแนะนำและวิดีโอที่อ่านง่ายสำหรับการดูแลเท้าอย่างต่อเนื่อง" /><div className="knowledge-mode-tabs" role="tablist" aria-label="รูปแบบคำแนะนำ"><button role="tab" aria-selected={mode === 'article'} className={mode === 'article' ? 'active' : ''} type="button" onClick={() => changeMode('article')}><BookOpen size={21} />คำแนะนำการดูแลเท้า</button><button role="tab" aria-selected={mode === 'video'} className={mode === 'video' ? 'active' : ''} type="button" onClick={() => changeMode('video')}><Video size={21} />วิดีโอแนะนำ</button></div><div className="knowledge-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={mode === 'video' ? 'ค้นหาวิดีโอแนะนำ' : 'ค้นหา เช่น ผิวแห้ง หนังด้าน'} aria-label="ค้นหาคำแนะนำการดูแลเท้า" /></label><div className="category-chips" aria-label="กรองตามหมวดหมู่">{categories.map((item) => <button className={category === item ? 'active' : ''} type="button" key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="knowledge-filter-row"><label><span>ภาวะ</span><select aria-label="กรองตามภาวะ" value={diseaseFilter} onChange={(event) => setDiseaseFilter(event.target.value)}>{diseaseOptions.map((id) => <option value={id} key={id}>{id === 'ทั้งหมด' ? id : `${id} · ${diseaseRecords.find((disease) => disease.id === id)?.name ?? id}`}</option>)}</select></label><label><span>ระดับความรุนแรง</span><select aria-label="กรองตามระดับความรุนแรง" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>{severityOptions.map((severity) => <option value={severity} key={severity}>{severity}</option>)}</select></label></div></div>{filtered.length ? <div className="article-grid">{filtered.map((article, index) => <article className={`article-card tone-${article.tone}`} key={article.id}><div className="article-visual">{article.image ? <img src={article.image} alt="" /> : article.youtubeUrl ? <Video size={34} /> : <HeartPulse size={30} />}<span>{index + 1}</span>{article.youtubeUrl ? <i className="video-badge"><Video size={14} />มีวิดีโอ</i> : null}</div><div className="article-body"><div><span className="category-label">{article.category}</span><span>{article.severity} · {article.readTime}</span></div><h2>{article.title}</h2><p>{article.summary}</p><button className="card-link" type="button" onClick={() => setSelected(article)}>{article.youtubeUrl ? 'ดูวิดีโอและคำแนะนำ' : 'อ่านคำแนะนำ'} <ChevronRight size={18} /></button></div></article>)}</div> : <div className="empty-state">{mode === 'video' ? <Video size={32} /> : <Search size={32} />}<h2>{mode === 'video' ? 'ยังไม่มีวิดีโอแนะนำ' : 'ยังไม่พบหัวข้อนี้'}</h2><p>{mode === 'video' ? 'เมื่อผู้ดูแลเพิ่มลิงก์ YouTube วิดีโอจะแสดงในส่วนนี้' : 'ลองค้นด้วยคำที่สั้นลง หรือเลือก “ทั้งหมด” เพื่อดูคำแนะนำที่มี'}</p>{mode === 'article' ? <button className="button button-secondary" type="button" onClick={() => { setQuery(''); setCategory('ทั้งหมด'); setDiseaseFilter('ทั้งหมด'); setSeverityFilter('ทั้งหมด') }}>ดูคำแนะนำทั้งหมด</button> : null}</div>}{selected ? <ArticleModal article={selected} saved={savedIds.has(selected.id)} saving={savingId === selected.id} onClose={() => setSelected(null)} onSaved={() => void toggleSaved(selected)} /> : null}</div>
+  return <div className="page knowledge-page"><PageTitle eyebrow="ความรู้สำหรับการดูแล" title="คำแนะนำการดูแลเท้า" description="คำแนะนำที่อ่านง่ายสำหรับการดูแลเท้าอย่างต่อเนื่อง" /><div className="knowledge-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหา เช่น ผิวแห้ง หนังด้าน" aria-label="ค้นหาคำแนะนำการดูแลเท้า" /></label><div className="category-chips" aria-label="กรองตามหมวดหมู่">{categories.map((item) => <button className={category === item ? 'active' : ''} type="button" key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="knowledge-filter-row"><label><span>ภาวะ</span><select aria-label="กรองตามภาวะ" value={diseaseFilter} onChange={(event) => setDiseaseFilter(event.target.value)}>{diseaseOptions.map((id) => <option value={id} key={id}>{id === 'ทั้งหมด' ? id : `${id} · ${diseaseRecords.find((disease) => disease.id === id)?.name ?? id}`}</option>)}</select></label><label><span>ระดับความรุนแรง</span><select aria-label="กรองตามระดับความรุนแรง" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}>{severityOptions.map((severity) => <option value={severity} key={severity}>{severity}</option>)}</select></label></div></div>{filtered.length ? <div className="article-grid">{filtered.map((article, index) => <article className={`article-card tone-${article.tone}`} key={article.id}><div className="article-visual">{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={30} />}<span>{index + 1}</span></div><div className="article-body"><div><span className="category-label">{article.category}</span><span>{article.severity} · {article.readTime}</span></div><h2>{article.title}</h2><p>{article.summary}</p><button className="card-link" type="button" onClick={() => setSelected(article)}>ดูคำแนะนำ <ChevronRight size={18} /></button></div></article>)}</div> : <div className="empty-state"><Search size={32} /><h2>ยังไม่พบหัวข้อนี้</h2><p>ลองค้นด้วยคำที่สั้นลง หรือเลือก “ทั้งหมด” เพื่อดูคำแนะนำที่มี</p><button className="button button-secondary" type="button" onClick={() => { setQuery(''); setCategory('ทั้งหมด'); setDiseaseFilter('ทั้งหมด'); setSeverityFilter('ทั้งหมด') }}>ดูคำแนะนำทั้งหมด</button></div>}{selected ? <ArticleModal article={selected} saved={savedIds.has(selected.id)} saving={savingId === selected.id} onClose={() => setSelected(null)} onSaved={() => void toggleSaved(selected)} /> : null}</div>
 }
 
 function ArticleModal({ article, saved, saving, onClose, onSaved }: { article: KnowledgeArticle; saved: boolean; saving: boolean; onClose: () => void; onSaved: () => void }) {
-  const embedUrl = getYoutubeEmbedUrl(article.youtubeUrl)
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><article className="detail-modal article-modal" role="dialog" aria-modal="true" aria-labelledby="article-title"><header><div><span className="eyebrow">{article.category} · {article.severity} · {article.readTime}</span><h2 id="article-title">{article.title}</h2></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><div className={`article-hero tone-${article.tone}`}>{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={44} />}</div><p className="article-intro">{article.summary}</p>{embedUrl ? <section className="inline-video-section" aria-label="วิดีโอประกอบคำแนะนำ"><div className="inline-video-heading"><span><Video size={19} /></span><div><strong>วิดีโอประกอบคำแนะนำ</strong><small>รับชม YouTube ได้โดยไม่ออกจาก DM Foot Care</small></div></div><div className="youtube-embed"><iframe src={embedUrl} title={`วิดีโอ ${article.title}`} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div></section> : null}{article.care.length ? <><h3>ทำตามขั้นตอนนี้</h3><ol className="care-steps">{article.care.map((step, index) => <li key={`${index}-${step}`}><span>{index + 1}</span>{step}</li>)}</ol></> : null}{article.treatment ? <section className="article-guidance"><h3>การรักษา</h3><p>{article.treatment}</p></section> : null}{article.recommendation ? <section className="article-guidance"><h3>คำแนะนำเพิ่มเติม</h3><p>{article.recommendation}</p></section> : null}<div className="review-explainer"><Info size={19} /><p>คำแนะนำทั่วไปอาจไม่เหมาะกับทุกคน หากมีอาการผิดปกติควรปรึกษาแพทย์</p></div><button className={saving ? 'button button-secondary action-pending' : 'button button-secondary'} type="button" disabled={saving} onClick={onSaved}>{saving ? 'กำลังบันทึก…' : saved ? 'นำออกจากรายการที่บันทึก' : 'บันทึกไว้อ่านภายหลัง'}</button></article></div>
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><article className="detail-modal article-modal" role="dialog" aria-modal="true" aria-labelledby="article-title"><header><div><span className="eyebrow">{article.category} · {article.severity} · {article.readTime}</span><h2 id="article-title">{article.title}</h2></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><div className={`article-hero tone-${article.tone}`}>{article.image ? <img src={article.image} alt="" /> : <HeartPulse size={44} />}</div><p className="article-intro">{article.summary}</p>{article.care.length ? <><h3>ทำตามขั้นตอนนี้</h3><ol className="care-steps">{article.care.map((step, index) => <li key={`${index}-${step}`}><span>{index + 1}</span>{step}</li>)}</ol></> : null}{article.treatment ? <section className="article-guidance"><h3>การรักษา</h3><p>{article.treatment}</p></section> : null}{article.recommendation ? <section className="article-guidance"><h3>คำแนะนำเพิ่มเติม</h3><p>{article.recommendation}</p></section> : null}<div className="review-explainer"><Info size={19} /><p>คำแนะนำทั่วไปอาจไม่เหมาะกับทุกคน หากมีอาการผิดปกติควรปรึกษาแพทย์</p></div><button className={saving ? 'button button-secondary action-pending' : 'button button-secondary'} type="button" disabled={saving} onClick={onSaved}>{saving ? 'กำลังบันทึก…' : saved ? 'นำออกจากรายการที่บันทึก' : 'บันทึกไว้อ่านภายหลัง'}</button></article></div>
+}
+
+function CareVideoPage({ videos }: { videos: CareVideo[] }) {
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<CareVideo | null>(null)
+  const filtered = useMemo(() => videos.filter((video) => `${video.title} ${video.summary}`.toLowerCase().includes(query.toLowerCase())), [videos, query])
+  return <div className="page care-video-page"><PageTitle eyebrow="เรียนรู้ด้วยวิดีโอ" title="วิดีโอแนะนำการดูแลเท้า" description="รับชมวิดีโอแนะนำจาก YouTube ได้ภายใน DM Foot Care โดยไม่ต้องออกจากเว็บไซต์" /><div className="knowledge-tools video-search-tools"><label className="search-field"><Search size={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาวิดีโอแนะนำ" aria-label="ค้นหาวิดีโอแนะนำการดูแลเท้า" /></label></div>{filtered.length ? <div className="care-video-grid">{filtered.map((video) => { const cover = video.image || getYoutubeThumbnailUrl(video.youtubeUrl); return <article className="care-video-card" key={video.id}><button type="button" className="care-video-cover" onClick={() => setSelected(video)} aria-label={`เปิดวิดีโอ ${video.title}`}>{cover ? <img src={cover} alt="" /> : <span className="video-cover-fallback"><Video size={38} /></span>}<span className="video-play-mark"><Video size={24} /></span></button><div className="care-video-card-body"><span className="category-label"><Video size={14} />วิดีโอ</span><h2>{video.title}</h2>{video.summary ? <p>{video.summary}</p> : null}<button className="card-link" type="button" onClick={() => setSelected(video)}>รับชมในเว็บ <ChevronRight size={18} /></button></div></article> })}</div> : <div className="empty-state"><Video size={32} /><h2>ยังไม่พบวิดีโอ</h2><p>{query ? 'ลองค้นหาด้วยคำที่สั้นลง' : 'เมื่อผู้ดูแลเพิ่มวิดีโอ รายการจะแสดงที่หน้านี้'}</p>{query ? <button className="button button-secondary" type="button" onClick={() => setQuery('')}>ดูวิดีโอทั้งหมด</button> : null}</div>}{selected ? <CareVideoModal video={selected} onClose={() => setSelected(null)} /> : null}</div>
+}
+
+function CareVideoModal({ video, onClose }: { video: CareVideo; onClose: () => void }) {
+  const embedUrl = getYoutubeEmbedUrl(video.youtubeUrl)
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><article className="detail-modal care-video-modal" role="dialog" aria-modal="true" aria-labelledby="care-video-title"><header><div><span className="eyebrow">วิดีโอแนะนำการดูแลเท้า</span><h2 id="care-video-title">{video.title}</h2></div><button className="icon-button" type="button" aria-label="ปิดวิดีโอ" onClick={onClose}><X size={21} /></button></header>{embedUrl ? <div className="youtube-embed care-video-player"><iframe src={embedUrl} title={video.title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div> : <div className="form-error" role="alert"><AlertTriangle size={18} />ลิงก์วิดีโอนี้ไม่สามารถเปิดได้</div>}{video.summary ? <p className="article-intro">{video.summary}</p> : null}<button className="button button-secondary" type="button" onClick={onClose}>ปิดวิดีโอ</button></article></div>
 }
 
 function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { page: Page; setPage: (page: Page) => void; showToast: (text: string) => void; adminService: AdminService; auditLogger?: AuditLogger }) {
   const [userRecords, setUserRecords] = useState<UserRecord[]>([])
   const [diseaseRecords, setDiseaseRecords] = useState<Disease[]>([])
   const [knowledgeRecords, setKnowledgeRecords] = useState<KnowledgeArticle[]>([])
+  const [videoRecords, setVideoRecords] = useState<CareVideo[]>([])
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -1278,6 +1314,7 @@ function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { 
       setUserRecords(data.users)
       setDiseaseRecords(data.diseases)
       setKnowledgeRecords(data.articles)
+      setVideoRecords(data.videos)
       if (data.dashboard) setDashboard(data.dashboard)
       if (data.partial) showToast('โหลดข้อมูลบางส่วนไม่สำเร็จ กรุณาลองใหม่')
     }).catch(() => { if (!cancelled) showToast('โหลดข้อมูลผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่') })
@@ -1286,6 +1323,7 @@ function DoctorPages({ page, setPage, showToast, adminService, auditLogger }: { 
   if (page === 'users') return <UserManagement users={userRecords} diseaseRecords={diseaseRecords} setUsers={setUserRecords} showToast={showToast} adminService={adminService} auditLogger={auditLogger} onUsersChanged={() => { void adminService.getDashboard().then(setDashboard).catch(() => {}) }} />
   if (page === 'diseases') return <DiseaseManagement diseases={diseaseRecords} setDiseases={setDiseaseRecords} showToast={showToast} adminService={adminService} />
   if (page === 'admin-knowledge') return <KnowledgeManagement articles={knowledgeRecords} diseaseRecords={diseaseRecords} setArticles={setKnowledgeRecords} showToast={showToast} adminService={adminService} />
+  if (page === 'admin-videos') return <VideoManagement videos={videoRecords} setVideos={setVideoRecords} showToast={showToast} adminService={adminService} />
   return <DoctorHome onNavigate={setPage} users={userRecords} diseaseRecords={diseaseRecords} adminService={adminService} dashboard={dashboard} />
 }
 
@@ -1530,23 +1568,22 @@ function KnowledgeManagement({ articles, diseaseRecords, setArticles, showToast,
   const [editing, setEditing] = useState<KnowledgeArticle | null>(null)
   const [creating, setCreating] = useState(false)
   const publishedCount = articles.filter((article) => (article.status ?? 'published') === 'published').length
-  const videoCount = articles.filter((article) => Boolean(article.youtubeUrl) && (article.status ?? 'published') === 'published').length
   const closeForm = () => { setEditing(null); setCreating(false) }
   const saveArticle = async (draft: Omit<KnowledgeArticle, 'id'>) => {
     try {
-      const saved = await adminService.saveKnowledge(editing ? { ...draft, id: editing.id } : draft)
-      setArticles((current) => editing ? current.map((article) => article.id === editing.id ? saved : article) : [...current, saved])
-      showToast(`${editing ? 'บันทึก' : 'สร้าง'} “${saved.title}” แล้ว`)
+      const saved = await adminService.saveKnowledge({ ...draft, ...(editing ? { id: editing.id } : {}) })
+      setArticles((current) => editing ? current.map((item) => item.id === editing.id ? saved : item) : [saved, ...current])
+      showToast(editing ? 'บันทึกการแก้ไขแล้ว' : 'สร้างคำแนะนำแล้ว')
       closeForm()
     } catch {
       showToast('บันทึกคำแนะนำไม่สำเร็จ')
     }
   }
-  return <div className="page admin-page"><PageTitle eyebrow="เนื้อหาสำหรับผู้ใช้" title="จัดการคำแนะนำการดูแลเท้า" description="จัดการบทความ ขั้นตอนการดูแล และวิดีโอ YouTube ที่แสดงให้ผู้ใช้" action={<button className="button button-primary" type="button" onClick={() => { setEditing(null); setCreating(true) }}><Plus size={18} />สร้างคำแนะนำ</button>} /><div className="admin-stat-grid compact"><AdminStat icon={BookOpen} label="เผยแพร่แล้ว" value={String(publishedCount)} note="พร้อมให้ผู้ใช้อ่าน" tone="blue" /><AdminStat icon={Video} label="วิดีโอแนะนำ" value={String(videoCount)} note="ลิงก์ YouTube ที่เผยแพร่" tone="teal" /></div><div className="knowledge-admin-list">{articles.map((article) => { const status = article.status ?? 'published'; return <article key={article.id}><span className={`article-icon tone-${article.tone}`}>{article.youtubeUrl ? <Video size={23} /> : <HeartPulse size={23} />}</span><div><span className="category-label">{article.youtubeUrl ? 'วิดีโอ · ' : ''}{article.category}</span><h2>{article.title}</h2><p>{article.summary}</p></div><span className={status === 'published' ? 'status-pill success' : status === 'draft' ? 'status-pill attention' : 'status-pill muted'}>{status === 'published' ? 'เผยแพร่แล้ว' : status === 'draft' ? 'ฉบับร่าง' : 'เก็บถาวร'}</span><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(article) }}>แก้ไข</button></article> })}</div>{creating || editing ? <KnowledgeFormModal article={editing} diseases={diseaseRecords} onClose={closeForm} onSave={saveArticle} /> : null}</div>
+  return <div className="page admin-page"><PageTitle eyebrow="เนื้อหาสำหรับผู้ใช้" title="จัดการคำแนะนำการดูแลเท้า" description="จัดการบทความและขั้นตอนการดูแลที่แสดงให้ผู้ใช้" action={<button className="button button-primary" type="button" onClick={() => { setEditing(null); setCreating(true) }}><Plus size={18} />สร้างคำแนะนำ</button>} /><div className="admin-stat-grid compact"><AdminStat icon={BookOpen} label="เผยแพร่แล้ว" value={String(publishedCount)} note="พร้อมให้ผู้ใช้อ่าน" tone="blue" /></div><div className="knowledge-admin-list">{articles.map((article) => { const status = article.status ?? 'published'; return <article key={article.id}><span className={`article-icon tone-${article.tone}`}><HeartPulse size={23} /></span><div><span className="category-label">{article.category}</span><h2>{article.title}</h2><p>{article.summary}</p></div><span className={status === 'published' ? 'status-pill success' : status === 'draft' ? 'status-pill attention' : 'status-pill muted'}>{status === 'published' ? 'เผยแพร่แล้ว' : status === 'draft' ? 'ฉบับร่าง' : 'เก็บถาวร'}</span><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(article) }}>แก้ไข</button></article> })}</div>{creating || editing ? <KnowledgeFormModal article={editing} diseases={diseaseRecords} onClose={closeForm} onSave={saveArticle} /> : null}</div>
 }
 
 function KnowledgeFormModal({ article, diseases: diseaseRecords, onClose, onSave }: { article: KnowledgeArticle | null; diseases: Disease[]; onClose: () => void; onSave: (draft: Omit<KnowledgeArticle, 'id'>) => void | Promise<void> }) {
-  const [draft, setDraft] = useState<Omit<KnowledgeArticle, 'id'>>(() => article ? { title: article.title, diseaseId: article.diseaseId, category: article.category, severity: article.severity, summary: article.summary, care: article.care.length ? article.care : [''], treatment: article.treatment, recommendation: article.recommendation, youtubeUrl: article.youtubeUrl, image: article.image, readTime: article.readTime, tone: article.tone, status: article.status ?? 'published' } : { title: '', diseaseId: '', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: '', care: ['', '', ''], treatment: '', recommendation: '', youtubeUrl: '', image: undefined, readTime: '', tone: 'blue', status: 'draft' })
+  const [draft, setDraft] = useState<Omit<KnowledgeArticle, 'id'>>(() => article ? { title: article.title, diseaseId: article.diseaseId, category: article.category, severity: article.severity, summary: article.summary, care: article.care.length ? article.care : [''], treatment: article.treatment, recommendation: article.recommendation, image: article.image, readTime: article.readTime, tone: article.tone, status: article.status ?? 'published' } : { title: '', diseaseId: '', category: 'ผิวหนัง', severity: 'ทุกระดับ', summary: '', care: ['', '', ''], treatment: '', recommendation: '', image: undefined, readTime: '', tone: 'blue', status: 'draft' })
   const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
   const updateCare = (index: number, value: string) => update('care', draft.care.map((step, stepIndex) => stepIndex === index ? value : step))
   const addCare = () => update('care', [...draft.care, ''])
@@ -1554,12 +1591,44 @@ function KnowledgeFormModal({ article, diseases: diseaseRecords, onClose, onSave
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     const care = draft.care.map((step) => step.trim()).filter(Boolean)
-    const youtubeUrl = draft.youtubeUrl?.trim() ?? ''
-    if (!draft.title.trim() || !draft.category.trim() || !draft.summary.trim() || (!care.length && !youtubeUrl)) return
-    onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), summary: draft.summary.trim(), care, youtubeUrl: youtubeUrl || undefined })
+    if (!draft.title.trim() || !draft.category.trim() || !draft.summary.trim() || !care.length) return
+    onSave({ ...draft, title: draft.title.trim(), category: draft.category.trim(), summary: draft.summary.trim(), care })
   }
   const readImage = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => update('image', String(reader.result)); reader.readAsDataURL(file); event.target.value = '' }
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="knowledge-form-title"><header><div><span className="eyebrow">{article ? 'แก้ไขคำแนะนำ' : 'คำแนะนำใหม่'}</span><h2 id="knowledge-form-title">{article ? `แก้ไข ${article.title}` : 'สร้างคำแนะนำการดูแลเท้า'}</h2><p>เพิ่มขั้นตอนการดูแลได้ตามต้องการ หรือใส่ลิงก์ YouTube เพื่อแสดงเป็นวิดีโอแนะนำ</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="knowledge-title">ชื่อคำแนะนำ</label><input id="knowledge-title" value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="เช่น ดูแลเท้าเมื่อผิวแห้ง" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-disease">เชื่อมกับภาวะ</label><select id="knowledge-disease" value={draft.diseaseId ?? ''} onChange={(event) => update('diseaseId', event.target.value)}><option value="">ไม่ระบุ</option>{diseaseRecords.map((disease) => <option value={disease.id} key={disease.id}>{disease.id} · {disease.name}</option>)}</select></div><div><label className="field-label" htmlFor="knowledge-severity">ระดับ</label><select id="knowledge-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as KnowledgeArticle['severity'])}><option>ทุกระดับ</option><option>เล็กน้อย</option><option>ปานกลาง</option><option>รุนแรง</option></select></div></div><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-category">หมวดหมู่</label><input id="knowledge-category" value={draft.category} onChange={(event) => update('category', event.target.value)} /></div><div><label className="field-label" htmlFor="knowledge-status">สถานะ</label><select id="knowledge-status" value={draft.status} onChange={(event) => update('status', event.target.value as KnowledgeArticle['status'])}><option value="draft">ฉบับร่าง</option><option value="published">เผยแพร่แล้ว</option><option value="archived">เก็บถาวร</option></select></div></div><label className="field-label" htmlFor="knowledge-summary">สรุปสั้น</label><textarea id="knowledge-summary" value={draft.summary} onChange={(event) => update('summary', event.target.value)} placeholder="คำอธิบายที่แสดงบนการ์ด" /><label className="field-label" htmlFor="knowledge-youtube">ลิงก์วิดีโอ YouTube <span className="optional-label">ไม่บังคับ</span></label><div className="video-url-field"><Video size={20} /><input id="knowledge-youtube" type="url" value={draft.youtubeUrl ?? ''} onChange={(event) => update('youtubeUrl', event.target.value)} placeholder="https://www.youtube.com/watch?v=..." /></div><small className="field-helper">เมื่อใส่ลิงก์ รายการนี้จะแสดงในแท็บ “วิดีโอแนะนำ” ของผู้ใช้</small><div className="care-step-editor"><div className="care-step-heading"><span className="field-label">ขั้นตอนการดูแล</span><button className="button button-secondary button-small" type="button" onClick={addCare}><Plus size={16} />เพิ่มขั้นตอน</button></div>{draft.care.length ? draft.care.map((step, index) => <div className="care-step-row" key={index}><span>{index + 1}</span><input id={`knowledge-care-${index + 1}`} value={step} onChange={(event) => updateCare(index, event.target.value)} placeholder={`ขั้นตอนที่ ${index + 1}`} /><button className="icon-button" type="button" aria-label={`ลบขั้นตอนที่ ${index + 1}`} onClick={() => removeCare(index)}><X size={18} /></button></div>) : <div className="care-step-empty">ยังไม่มีขั้นตอน · เหมาะสำหรับรายการวิดีโอ</div>}</div><label className="field-label" htmlFor="knowledge-treatment">การรักษา</label><textarea id="knowledge-treatment" value={draft.treatment ?? ''} onChange={(event) => update('treatment', event.target.value)} placeholder="แนวทางการรักษาหรือการส่งต่อ" /><label className="field-label" htmlFor="knowledge-recommendation">คำแนะนำเพิ่มเติม</label><textarea id="knowledge-recommendation" value={draft.recommendation ?? ''} onChange={(event) => update('recommendation', event.target.value)} placeholder="ข้อควรระวังหรือคำแนะนำสำหรับผู้ใช้" /><label className="field-label" htmlFor="knowledge-image">รูปประกอบ</label><input id="knowledge-image" type="file" accept="image/*" onChange={readImage} />{draft.image ? <img className="reference-image-preview" src={draft.image} alt="รูปประกอบคำแนะนำ" /> : <small className="field-helper">เมื่อบันทึก ระบบจะอัปโหลดรูปไปยังพื้นที่จัดเก็บส่วนตัวของ DM Foot Care</small>}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกคำแนะนำ</button></div></form></section></div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="knowledge-form-title"><header><div><span className="eyebrow">{article ? 'แก้ไขคำแนะนำ' : 'คำแนะนำใหม่'}</span><h2 id="knowledge-form-title">{article ? `แก้ไข ${article.title}` : 'สร้างคำแนะนำการดูแลเท้า'}</h2><p>เพิ่มขั้นตอนการดูแลได้ตามต้องการ วิดีโอจัดการแยกในเมนู “วิดีโอแนะนำการดูแลเท้า”</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="knowledge-title">ชื่อคำแนะนำ</label><input id="knowledge-title" value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="เช่น ดูแลเท้าเมื่อผิวแห้ง" /><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-disease">เชื่อมกับภาวะ</label><select id="knowledge-disease" value={draft.diseaseId ?? ''} onChange={(event) => update('diseaseId', event.target.value)}><option value="">ไม่ระบุ</option>{diseaseRecords.map((disease) => <option value={disease.id} key={disease.id}>{disease.id} · {disease.name}</option>)}</select></div><div><label className="field-label" htmlFor="knowledge-severity">ระดับ</label><select id="knowledge-severity" value={draft.severity} onChange={(event) => update('severity', event.target.value as KnowledgeArticle['severity'])}><option>ทุกระดับ</option><option>เล็กน้อย</option><option>ปานกลาง</option><option>รุนแรง</option></select></div></div><div className="admin-form-grid"><div><label className="field-label" htmlFor="knowledge-category">หมวดหมู่</label><input id="knowledge-category" value={draft.category} onChange={(event) => update('category', event.target.value)} /></div><div><label className="field-label" htmlFor="knowledge-status">สถานะ</label><select id="knowledge-status" value={draft.status} onChange={(event) => update('status', event.target.value as KnowledgeArticle['status'])}><option value="draft">ฉบับร่าง</option><option value="published">เผยแพร่แล้ว</option><option value="archived">เก็บถาวร</option></select></div></div><label className="field-label" htmlFor="knowledge-summary">สรุปสั้น</label><textarea id="knowledge-summary" value={draft.summary} onChange={(event) => update('summary', event.target.value)} placeholder="คำอธิบายที่แสดงบนการ์ด" /><div className="care-step-editor"><div className="care-step-heading"><span className="field-label">ขั้นตอนการดูแล</span><button className="button button-secondary button-small" type="button" onClick={addCare}><Plus size={16} />เพิ่มขั้นตอน</button></div>{draft.care.length ? draft.care.map((step, index) => <div className="care-step-row" key={index}><span>{index + 1}</span><input id={`knowledge-care-${index + 1}`} value={step} onChange={(event) => updateCare(index, event.target.value)} placeholder={`ขั้นตอนที่ ${index + 1}`} /><button className="icon-button" type="button" aria-label={`ลบขั้นตอนที่ ${index + 1}`} onClick={() => removeCare(index)}><X size={18} /></button></div>) : <div className="care-step-empty">เพิ่มขั้นตอนการดูแลอย่างน้อย 1 ขั้นตอน</div>}</div><label className="field-label" htmlFor="knowledge-treatment">การรักษา</label><textarea id="knowledge-treatment" value={draft.treatment ?? ''} onChange={(event) => update('treatment', event.target.value)} placeholder="แนวทางการรักษาหรือการส่งต่อ" /><label className="field-label" htmlFor="knowledge-recommendation">คำแนะนำเพิ่มเติม</label><textarea id="knowledge-recommendation" value={draft.recommendation ?? ''} onChange={(event) => update('recommendation', event.target.value)} placeholder="ข้อควรระวังหรือคำแนะนำสำหรับผู้ใช้" /><label className="field-label" htmlFor="knowledge-image">รูปประกอบ</label><input id="knowledge-image" type="file" accept="image/*" onChange={readImage} />{draft.image ? <img className="reference-image-preview" src={draft.image} alt="รูปประกอบคำแนะนำ" /> : <small className="field-helper">เมื่อบันทึก ระบบจะอัปโหลดรูปไปยังพื้นที่จัดเก็บส่วนตัวของ DM Foot Care</small>}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกคำแนะนำ</button></div></form></section></div>
+}
+
+function VideoManagement({ videos, setVideos, showToast, adminService }: { videos: CareVideo[]; setVideos: React.Dispatch<React.SetStateAction<CareVideo[]>>; showToast: (text: string) => void; adminService: AdminService }) {
+  const [editing, setEditing] = useState<CareVideo | null>(null)
+  const [creating, setCreating] = useState(false)
+  const publishedCount = videos.filter((video) => (video.status ?? 'published') === 'published').length
+  const closeForm = () => { setEditing(null); setCreating(false) }
+  const saveVideo = async (draft: Omit<CareVideo, 'id'>) => {
+    try {
+      const saved = await adminService.saveCareVideo({ ...draft, ...(editing ? { id: editing.id } : {}) })
+      setVideos((current) => editing ? current.map((item) => item.id === editing.id ? saved : item) : [saved, ...current])
+      showToast(editing ? 'บันทึกวิดีโอแล้ว' : 'เพิ่มวิดีโอแล้ว')
+      closeForm()
+    } catch (error) {
+      showToast(error instanceof Error && error.message ? error.message : 'บันทึกวิดีโอไม่สำเร็จ')
+    }
+  }
+  return <div className="page admin-page"><PageTitle eyebrow="สื่อวิดีโอสำหรับผู้ใช้" title="จัดการวิดีโอแนะนำการดูแลเท้า" description="เพิ่มรูปปกและลิงก์ YouTube ผู้ใช้จะรับชมวิดีโอภายใน DM Foot Care" action={<button className="button button-primary" type="button" onClick={() => { setEditing(null); setCreating(true) }}><Plus size={18} />เพิ่มวิดีโอ</button>} /><div className="admin-stat-grid compact"><AdminStat icon={Video} label="เผยแพร่แล้ว" value={String(publishedCount)} note="วิดีโอพร้อมรับชม" tone="teal" /></div><div className="knowledge-admin-list video-admin-list">{videos.map((video) => { const status = video.status ?? 'published'; return <article key={video.id}>{video.image ? <img className="video-admin-thumb" src={video.image} alt="" /> : <span className="article-icon tone-teal"><Video size={23} /></span>}<div><span className="category-label"><Video size={14} />YouTube</span><h2>{video.title}</h2><p>{video.summary || 'ไม่มีคำอธิบาย'}</p></div><span className={status === 'published' ? 'status-pill success' : status === 'draft' ? 'status-pill attention' : 'status-pill muted'}>{status === 'published' ? 'เผยแพร่แล้ว' : status === 'draft' ? 'ฉบับร่าง' : 'เก็บถาวร'}</span><button className="button button-secondary button-small" type="button" onClick={() => { setCreating(false); setEditing(video) }}>แก้ไข</button></article> })}</div>{creating || editing ? <VideoFormModal video={editing} onClose={closeForm} onSave={saveVideo} /> : null}</div>
+}
+
+function VideoFormModal({ video, onClose, onSave }: { video: CareVideo | null; onClose: () => void; onSave: (draft: Omit<CareVideo, 'id'>) => void | Promise<void> }) {
+  const [draft, setDraft] = useState<Omit<CareVideo, 'id'>>(() => video ? { title: video.title, summary: video.summary, youtubeUrl: video.youtubeUrl, image: video.image, status: video.status ?? 'published' } : { title: '', summary: '', youtubeUrl: '', image: undefined, status: 'draft' })
+  const [error, setError] = useState('')
+  const update = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) => setDraft((current) => ({ ...current, [key]: value }))
+  const readImage = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 4_000_000) { setError('รูปปกต้องมีขนาดไม่เกิน 4 MB'); event.target.value = ''; return } const reader = new FileReader(); reader.onload = () => { update('image', String(reader.result)); setError('') }; reader.readAsDataURL(file); event.target.value = '' }
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    setError('')
+    if (!draft.title.trim()) return setError('กรุณาระบุชื่อวิดีโอ')
+    if (!getYoutubeVideoId(draft.youtubeUrl)) return setError('กรุณาใส่ลิงก์ YouTube ที่ถูกต้อง')
+    void onSave({ ...draft, title: draft.title.trim(), summary: draft.summary.trim(), youtubeUrl: draft.youtubeUrl.trim() })
+  }
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal admin-form-modal" role="dialog" aria-modal="true" aria-labelledby="video-form-title"><header><div><span className="eyebrow">{video ? 'แก้ไขวิดีโอ' : 'วิดีโอใหม่'}</span><h2 id="video-form-title">{video ? `แก้ไข ${video.title}` : 'เพิ่มวิดีโอแนะนำการดูแลเท้า'}</h2><p>อัปโหลดรูปปกและวางลิงก์ YouTube ระบบจะฝัง Player ให้รับชมในเว็บไซต์โดยตรง</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><form className="admin-form" onSubmit={submit}><label className="field-label" htmlFor="video-title">ชื่อวิดีโอ</label><input id="video-title" value={draft.title} onChange={(event) => update('title', event.target.value)} placeholder="เช่น วิธีตรวจเท้าด้วยตนเอง" /><label className="field-label" htmlFor="video-summary">คำอธิบายสั้น <span className="optional-label">ไม่บังคับ</span></label><textarea id="video-summary" value={draft.summary} onChange={(event) => update('summary', event.target.value)} placeholder="อธิบายว่าวิดีโอนี้ช่วยเรื่องอะไร" /><label className="field-label" htmlFor="video-youtube">ลิงก์ YouTube</label><div className="video-url-field"><Video size={20} /><input id="video-youtube" type="url" value={draft.youtubeUrl} onChange={(event) => update('youtubeUrl', event.target.value)} placeholder="https://www.youtube.com/watch?v=..." /></div><small className="field-helper">รองรับ youtube.com, youtu.be, Shorts และ Live และวิดีโอจะเปิดในเว็บ DM Foot Care</small><label className="field-label" htmlFor="video-image">รูปปกวิดีโอ <span className="optional-label">ไม่บังคับ</span></label><input id="video-image" type="file" accept="image/jpeg,image/png,image/webp" onChange={readImage} />{draft.image ? <img className="reference-image-preview video-cover-preview" src={draft.image} alt="ตัวอย่างรูปปกวิดีโอ" /> : <small className="field-helper">หากไม่ใส่รูป ระบบจะแสดงภาพตัวอย่างจาก YouTube ให้ผู้ใช้แทน</small>}<label className="field-label" htmlFor="video-status">สถานะ</label><select id="video-status" value={draft.status} onChange={(event) => update('status', event.target.value as CareVideo['status'])}><option value="draft">ฉบับร่าง</option><option value="published">เผยแพร่แล้ว</option><option value="archived">เก็บถาวร</option></select>{error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}</div> : null}<div className="admin-form-actions"><button className="button button-secondary" type="button" onClick={onClose}>ยกเลิก</button><button className="button button-primary" type="submit">บันทึกวิดีโอ</button></div></form></section></div>
 }
 
 export default App

@@ -1,6 +1,6 @@
 export type Role = 'user' | 'admin'
 export type Sex = 'male' | 'female' | 'other' | 'prefer_not_to_say'
-export type Page = 'home' | 'exam' | 'history' | 'knowledge' | 'admin-home' | 'users' | 'diseases' | 'admin-knowledge'
+export type Page = 'home' | 'exam' | 'history' | 'knowledge' | 'videos' | 'admin-home' | 'users' | 'diseases' | 'admin-knowledge' | 'admin-videos'
 export type Severity = 'เล็กน้อย' | 'ปานกลาง' | 'รุนแรง'
 export type FootPosition = 'left-dorsal' | 'left-sole' | 'right-dorsal' | 'right-sole'
 export type FindingComparison = 'ดีขึ้น' | 'คงที่' | 'ควรติดตาม' | 'แย่ลง' | 'ยังไม่มีข้อมูลเปรียบเทียบ'
@@ -69,10 +69,18 @@ export interface KnowledgeArticle {
   care: string[]
   treatment?: string
   recommendation?: string
-  youtubeUrl?: string
   image?: string
   readTime: string
   tone: 'blue' | 'teal' | 'amber'
+  status?: 'draft' | 'published' | 'archived'
+}
+
+export interface CareVideo {
+  id: string
+  title: string
+  summary: string
+  youtubeUrl: string
+  image?: string
   status?: 'draft' | 'published' | 'archived'
 }
 
