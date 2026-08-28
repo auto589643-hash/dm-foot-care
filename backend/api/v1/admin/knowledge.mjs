@@ -14,26 +14,16 @@ function badRequest(message) {
 }
 
 function parseBody(value) {
-  if (Array.isArray(value)) return { care: value.map(String), treatment: '', recommendation: '', youtubeUrl: '', tone: 'blue' }
+  if (Array.isArray(value)) return { care: value.map(String), treatment: '', recommendation: '', tone: 'blue' }
   if (value && typeof value === 'object') return {
     care: Array.isArray(value.care) ? value.care.map(String) : [],
     treatment: String(value.treatment || ''),
     recommendation: String(value.recommendation || ''),
-    youtubeUrl: String(value.youtubeUrl || ''),
     tone: tones.has(value.tone) ? value.tone : 'blue',
   }
-  return { care: [], treatment: '', recommendation: '', youtubeUrl: '', tone: 'blue' }
+  return { care: [], treatment: '', recommendation: '', tone: 'blue' }
 }
 
-function normalizeYoutubeUrl(value) {
-  const raw = String(value || '').trim()
-  if (!raw) return ''
-  let parsed
-  try { parsed = new URL(raw) } catch { throw badRequest('URL YouTube ไม่ถูกต้อง') }
-  const host = parsed.hostname.toLowerCase().replace(/^www\./, '')
-  if (parsed.protocol !== 'https:' || !['youtube.com', 'm.youtube.com', 'youtu.be'].includes(host)) throw badRequest('กรุณาใช้ลิงก์ YouTube แบบ https เท่านั้น')
-  return parsed.toString()
-}
 
 function readTimeFor(article) {
   const body = parseBody(article.body)
@@ -97,7 +87,6 @@ async function mapArticle(article, lookups) {
     care: body.care,
     treatment: body.treatment || undefined,
     recommendation: body.recommendation || undefined,
-    youtubeUrl: body.youtubeUrl || undefined,
     image,
     readTime: readTimeFor(article),
     tone,
@@ -110,14 +99,13 @@ async function normalizeInput(body, lookups) {
   const category = String(body.category || '').trim()
   const summary = String(body.summary || '').trim()
   const care = Array.isArray(body.care) ? body.care.map((item) => String(item).trim()).filter(Boolean) : []
-  const youtubeUrl = normalizeYoutubeUrl(body.youtubeUrl)
   const status = statuses.has(body.status) ? body.status : 'draft'
   const diseaseCode = String(body.diseaseId || '').trim()
   const severity = String(body.severity || 'ทุกระดับ')
   if (!title) throw badRequest('กรุณาระบุชื่อบทความ')
   if (!category) throw badRequest('กรุณาระบุหมวดหมู่')
   if (!summary) throw badRequest('กรุณาระบุสรุปบทความ')
-  if (!care.length && !youtubeUrl) throw badRequest('กรุณาระบุขั้นตอนการดูแลอย่างน้อย 1 ขั้นตอน หรือเพิ่มลิงก์วิดีโอ YouTube')
+  if (!care.length) throw badRequest('กรุณาระบุขั้นตอนการดูแลอย่างน้อย 1 ขั้นตอน')
   if (severity !== 'ทุกระดับ' && !severities.has(severity)) throw badRequest('ระดับความรุนแรงไม่ถูกต้อง')
   const disease = diseaseCode ? lookups.diseaseByCode.get(diseaseCode) : null
   if (diseaseCode && !disease) throw badRequest('ไม่พบรายการภาวะที่เลือก')
@@ -135,7 +123,6 @@ async function normalizeInput(body, lookups) {
       care,
       treatment: String(body.treatment || '').trim(),
       recommendation: String(body.recommendation || '').trim(),
-      youtubeUrl,
       tone: severity === 'รุนแรง' ? 'amber' : severity === 'ปานกลาง' ? 'teal' : 'blue',
     },
     image: body.image ? String(body.image) : '',
