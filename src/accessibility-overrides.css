@@ -26,6 +26,10 @@ input, select, textarea { font-size: 17px !important; }
 .registration-helper svg { flex: 0 0 auto; margin-top: 3px; color: var(--blue); }
 .registration-success { max-width: 520px; }
 
+.knowledge-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 22px; padding: 6px; border: 1px solid var(--line); background: #fff; border-radius: 16px; box-shadow: var(--shadow-sm); }
+.knowledge-mode-tabs button { min-height: 54px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: inherit; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; }
+.knowledge-mode-tabs button.active { background: var(--blue-soft); color: var(--blue-dark); box-shadow: inset 0 0 0 1px #cfe0ff; }
+
 .video-badge { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(16,35,63,.88); color: #fff; font-size: 12px; font-style: normal; font-weight: 700; }
 .article-visual { position: relative; }
 .inline-video-section { margin: 20px 0 24px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: #f8fbff; }
@@ -56,6 +60,8 @@ input, select, textarea { font-size: 17px !important; }
   .field-label { font-size: 16px; }
   .button { font-size: 16px; }
   .page-title p, .page-lead, .article-card p, .knowledge-callout p { font-size: 16px; }
+  .knowledge-mode-tabs { grid-template-columns: 1fr 1fr; }
+  .knowledge-mode-tabs button { padding: 8px; font-size: 14px; line-height: 1.35; }
   .mobile-nav { min-height: 72px; }
   .mobile-nav .nav-item { min-height: 64px; padding: 6px 4px; }
   .mobile-nav .nav-item span { max-width: 88px; white-space: normal; text-align: center; font-size: 14px; line-height: 1.25; }
