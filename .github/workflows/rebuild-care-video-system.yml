@@ -39,7 +39,6 @@ jobs:
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nassert.doesNotMatch(types, /KnowledgeArticle[\\\\s\\\\S]*youtubeUrl\\\\?: string/)\\n',
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nconst knowledgeArticleBlock = types.match(/export interface KnowledgeArticle \\\\{[\\\\s\\\\S]*?\\\\n\\\\}/)?.[0] ?? \'\'\\nassert.doesNotMatch(knowledgeArticleBlock, /youtubeUrl/)\\n'
           )
-          # Patient home should feature the first knowledge article only; video data is now separate.
           insertion = "replace_once('src/App.tsx', \"  const featuredArticle = articles.find((article) => !article.youtubeUrl) ?? articles[0]\", \"  const featuredArticle = articles[0]\")\n\n"
           marker = "# PatientPages signature and page route\n"
           if insertion not in source:
@@ -49,6 +48,31 @@ jobs:
 
       - name: Apply guarded source update
         run: python .github/scripts/apply_care_video_system_rebuild.py
+
+      - name: Align feature regression contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/feature_update_contract.test.ts')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace("const publicKnowledge = read('backend/api/v1/knowledge.mjs')\n", "const publicKnowledge = read('backend/api/v1/knowledge.mjs')\nconst adminVideos = read('backend/api/v1/admin/care-videos.mjs')\nconst publicVideos = read('backend/api/v1/care-videos.mjs')\n")
+          legacy_lines = [
+              "assert.match(app, /มีวิดีโอ/)\n",
+              "assert.match(app, /knowledge-mode-tabs/)\n",
+              "assert.match(adminKnowledge, /normalizeYoutubeUrl/)\n",
+              "assert.match(adminKnowledge, /youtubeUrl/)\n",
+              "assert.match(publicKnowledge, /youtubeUrl/)\n",
+              "assert.match(css, /\\.inline-video-section/)\n",
+              "assert.match(css, /\\.knowledge-mode-tabs/)\n",
+          ]
+          for line in legacy_lines:
+              source = source.replace(line, '')
+          marker = "assert.match(main, /accessibility-overrides\\.css/)\n"
+          extra = "assert.doesNotMatch(adminKnowledge, /youtubeUrl/)\nassert.doesNotMatch(publicKnowledge, /youtubeUrl/)\nassert.match(adminVideos, /normalizeYoutubeUrl/)\nassert.match(adminVideos, /dmfc-knowledge-media/)\nassert.match(publicVideos, /care_videos/)\n"
+          if extra not in source:
+              source = source.replace(marker, extra + marker)
+          path.write_text(source, encoding='utf-8')
+          PY
 
       - name: Install dependencies
         run: npm ci
