@@ -1,4 +1,5 @@
 export type Role = 'user' | 'admin'
+export type Sex = 'male' | 'female' | 'other' | 'prefer_not_to_say'
 export type Page = 'home' | 'exam' | 'history' | 'knowledge' | 'admin-home' | 'users' | 'diseases' | 'admin-knowledge'
 export type Severity = 'เล็กน้อย' | 'ปานกลาง' | 'รุนแรง'
 export type FootPosition = 'left-dorsal' | 'left-sole' | 'right-dorsal' | 'right-sole'
@@ -12,6 +13,9 @@ export interface Profile {
   age: number
   generation: string
   occupation: string
+  sex?: Sex
+  diabetesYears?: number | null
+  latestHba1c?: number | null
   role: Role
 }
 
@@ -65,6 +69,7 @@ export interface KnowledgeArticle {
   care: string[]
   treatment?: string
   recommendation?: string
+  youtubeUrl?: string
   image?: string
   readTime: string
   tone: 'blue' | 'teal' | 'amber'
@@ -78,6 +83,9 @@ export interface UserRecord {
   dateOfBirth: string
   age: number
   occupation: string
+  sex?: Sex
+  diabetesYears?: number | null
+  latestHba1c?: number | null
   pinConfigured: boolean
   status: 'pending' | 'active' | 'inactive'
   lastExam: string
@@ -121,5 +129,8 @@ export interface RegistrationInput {
   displayName: string
   dateOfBirth: string
   occupation: string
+  sex: Sex
+  diabetesYears: number
+  latestHba1c?: number
   pin: string
 }

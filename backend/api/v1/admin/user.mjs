@@ -56,6 +56,21 @@ async function updateUser(userId, body, action) {
     if (!occupation || occupation.length > 160) throw badRequest('อาชีพไม่ถูกต้อง')
     patch.occupation = occupation
   }
+  if ('sex' in body) {
+    const sex = body.sex == null || body.sex === '' ? null : String(body.sex)
+    if (sex && !['male', 'female', 'other', 'prefer_not_to_say'].includes(sex)) throw badRequest('เพศไม่ถูกต้อง')
+    patch.sex = sex
+  }
+  if ('diabetesYears' in body) {
+    const value = body.diabetesYears === '' || body.diabetesYears == null ? null : Number(body.diabetesYears)
+    if (value != null && (!Number.isInteger(value) || value < 0 || value > 100)) throw badRequest('จำนวนปีที่เป็นเบาหวานไม่ถูกต้อง')
+    patch.diabetes_years = value
+  }
+  if ('latestHba1c' in body) {
+    const value = body.latestHba1c === '' || body.latestHba1c == null ? null : Number(body.latestHba1c)
+    if (value != null && (!Number.isFinite(value) || value <= 0 || value > 30)) throw badRequest('HbA1c ล่าสุดไม่ถูกต้อง')
+    patch.latest_hba1c = value
+  }
   if ('status' in body) {
     const status = String(body.status || '')
     if (!ACCOUNT_STATUSES.has(status)) throw badRequest('สถานะผู้ใช้ไม่ถูกต้อง')

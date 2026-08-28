@@ -69,7 +69,7 @@ async function loadDashboard(sourceRows) {
 
 async function loadSharedAdminRows() {
   const [profiles, roles, examinations, findings] = await Promise.all([
-    supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status,pin_hash&order=username'),
+    supabaseRest('/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,sex,diabetes_years,latest_hba1c,account_status,pin_hash&order=username'),
     supabaseRest('/rest/v1/user_roles?select=user_id,role'),
     supabaseRest('/rest/v1/examinations?select=id,user_id,status,examined_at,created_at&order=created_at.desc'),
     supabaseRest('/rest/v1/confirmed_findings?select=examination_id,disease_name_snapshot,severity_label_snapshot,confirmed_at'),

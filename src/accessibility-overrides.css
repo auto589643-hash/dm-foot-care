@@ -1,0 +1,61 @@
+/* DMFC accessibility and feature additions — loaded after legacy styles. */
+:root { font-size: 17px; }
+body { font-size: 17px; line-height: 1.65; }
+p, li, dd, dt, td, th, label, input, select, textarea, button { line-height: 1.55; }
+.eyebrow { font-size: 14px; line-height: 1.4; letter-spacing: .055em; }
+.button { min-height: 50px; font-size: 17px; padding: 11px 19px; }
+.button-large { min-height: 58px; font-size: 18px; }
+.button-small { min-height: 44px; font-size: 15px; padding: 8px 13px; }
+.field-label { font-size: 16px; margin-top: 20px; }
+input, select, textarea { font-size: 17px !important; }
+.registration-form > input,
+.registration-form select,
+.registration-form .registration-grid input,
+.admin-form input,
+.admin-form select { min-height: 52px; }
+.admin-form textarea { min-height: 108px; }
+.field-helper, .field-error-text, .login-support, small { font-size: 14px; }
+.status-pill, .severity-label, .category-label { font-size: 14px; padding: 6px 10px; }
+.section-heading h2 { font-size: 21px; }
+.disclaimer { font-size: 15px; line-height: 1.7; }
+.nav-item span { font-size: 16px; line-height: 1.35; }
+.page-title p, .page-lead, .article-card p, .knowledge-callout p { font-size: 17px; line-height: 1.7; }
+.login-heading p, .login-support, .registration-success p { font-size: 16px; line-height: 1.7; }
+.optional-label { display: inline-flex; margin-left: 6px; padding: 2px 7px; border-radius: 999px; background: #edf3fa; color: var(--muted); font-size: 13px; font-weight: 600; vertical-align: middle; }
+.registration-helper { margin: 18px 0 2px; padding: 12px 14px; border-radius: 12px; background: var(--blue-soft); color: var(--muted); display: flex; align-items: flex-start; gap: 9px; font-size: 15px; }
+.registration-helper svg { flex: 0 0 auto; margin-top: 3px; color: var(--blue); }
+.registration-success { max-width: 520px; }
+
+.knowledge-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0 0 22px; padding: 6px; border: 1px solid var(--line); background: #fff; border-radius: 16px; box-shadow: var(--shadow-sm); }
+.knowledge-mode-tabs button { min-height: 54px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: inherit; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 9px; cursor: pointer; }
+.knowledge-mode-tabs button.active { background: var(--blue-soft); color: var(--blue-dark); box-shadow: inset 0 0 0 1px #cfe0ff; }
+.video-badge { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px; background: rgba(16,35,63,.88); color: #fff; font-size: 12px; font-style: normal; font-weight: 700; }
+.article-visual { position: relative; }
+.video-open-button { margin: 18px 0 10px; text-decoration: none; }
+.video-url-field { min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid #cdd9e7; border-radius: 12px; background: #fff; }
+.video-url-field svg { flex: 0 0 auto; color: var(--blue); }
+.video-url-field input { min-width: 0; flex: 1; border: 0 !important; outline: 0; min-height: 48px !important; }
+.care-step-editor { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #f9fbfe; }
+.care-step-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.care-step-heading .field-label { margin: 0; }
+.care-step-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 44px; align-items: center; gap: 8px; margin-top: 9px; }
+.care-step-row > span { width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--blue-soft); color: var(--blue-dark); font-weight: 800; }
+.care-step-row input { width: 100%; min-height: 50px; }
+.care-step-empty { padding: 14px; border: 1px dashed #cdd9e7; border-radius: 10px; color: var(--muted); text-align: center; font-size: 15px; }
+
+@media (max-width: 760px) {
+  :root { font-size: 16px; }
+  body { font-size: 16px; }
+  .login-page { min-height: 100dvh; }
+  .login-form-wrap { width: 100%; }
+  .registration-grid { grid-template-columns: 1fr !important; gap: 0 !important; }
+  .field-label { font-size: 16px; }
+  .button { font-size: 16px; }
+  .page-title p, .page-lead, .article-card p, .knowledge-callout p { font-size: 16px; }
+  .knowledge-mode-tabs { grid-template-columns: 1fr 1fr; }
+  .knowledge-mode-tabs button { padding: 8px; font-size: 14px; line-height: 1.35; }
+  .mobile-nav { min-height: 72px; }
+  .mobile-nav .nav-item { min-height: 64px; padding: 6px 4px; }
+  .mobile-nav .nav-item span { max-width: 88px; white-space: normal; text-align: center; font-size: 14px; line-height: 1.25; }
+  .care-step-row { grid-template-columns: 30px minmax(0, 1fr) 44px; }
+}

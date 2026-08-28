@@ -216,6 +216,9 @@ function mapProfile(profile, role) {
     age: ageFromBirthDate(profile.date_of_birth),
     generation: '',
     occupation: profile.occupation || '',
+    sex: profile.sex || undefined,
+    diabetesYears: profile.diabetes_years == null ? null : Number(profile.diabetes_years),
+    latestHba1c: profile.latest_hba1c == null ? null : Number(profile.latest_hba1c),
     role: role === 'admin' ? 'admin' : 'user',
   }
 }
@@ -224,7 +227,7 @@ export async function loadProfileForUser(userId) {
   const { url, serviceKey } = config()
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` }
   const [profileResponse, roleResponse] = await Promise.all([
-    fetch(`${url}/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status&user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers }),
+    fetch(`${url}/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,sex,diabetes_years,latest_hba1c,account_status&user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers }),
     fetch(`${url}/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(userId)}&limit=1`, { headers }),
   ])
   if (!profileResponse.ok) throw new Error(`Profile request failed (${profileResponse.status})`)
@@ -255,7 +258,7 @@ export async function signInWithUsername(username, pin) {
   const { url, serviceKey, publishableKey } = config()
   const normalizedUsername = String(username || '').trim().toUpperCase()
   const headers = { apikey: serviceKey, authorization: `Bearer ${serviceKey}` }
-  const profileResponse = await fetch(`${url}/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,account_status&username=eq.${encodeURIComponent(normalizedUsername)}&limit=1`, { headers })
+  const profileResponse = await fetch(`${url}/rest/v1/profiles?select=user_id,username,display_name,date_of_birth,occupation,sex,diabetes_years,latest_hba1c,account_status&username=eq.${encodeURIComponent(normalizedUsername)}&limit=1`, { headers })
   if (!profileResponse.ok) throw new Error(`Profile lookup failed (${profileResponse.status})`)
   const profiles = await profileResponse.json()
   const profile = profiles[0]
