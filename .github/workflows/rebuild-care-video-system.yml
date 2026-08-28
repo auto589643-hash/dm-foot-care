@@ -32,6 +32,10 @@ jobs:
           source = path.read_text(encoding='utf-8')
           source = source.replace("'function AdminHome('", "'function DoctorHome('")
           source = source.replace(
+              "  return <AdminHome dashboard={dashboard} onOpenUsers={() => setPage('users')} />",
+              "  return <DoctorHome onNavigate={setPage} users={userRecords} diseaseRecords={diseaseRecords} adminService={adminService} dashboard={dashboard} />"
+          )
+          source = source.replace(
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nassert.doesNotMatch(types, /KnowledgeArticle[\\\\s\\\\S]*youtubeUrl\\\\?: string/)\\n',
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nconst knowledgeArticleBlock = types.match(/export interface KnowledgeArticle \\\\{[\\\\s\\\\S]*?\\\\n\\\\}/)?.[0] ?? \'\'\\nassert.doesNotMatch(knowledgeArticleBlock, /youtubeUrl/)\\n'
           )
