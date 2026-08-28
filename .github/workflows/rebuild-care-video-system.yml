@@ -39,6 +39,11 @@ jobs:
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nassert.doesNotMatch(types, /KnowledgeArticle[\\\\s\\\\S]*youtubeUrl\\\\?: string/)\\n',
               'test += "\\nassert.match(types, /export interface CareVideo/)\\nassert.match(types, /\'videos\'/)\\nassert.match(types, /\'admin-videos\'/)\\nconst knowledgeArticleBlock = types.match(/export interface KnowledgeArticle \\\\{[\\\\s\\\\S]*?\\\\n\\\\}/)?.[0] ?? \'\'\\nassert.doesNotMatch(knowledgeArticleBlock, /youtubeUrl/)\\n'
           )
+          # Patient home should feature the first knowledge article only; video data is now separate.
+          insertion = "replace_once('src/App.tsx', \"  const featuredArticle = articles.find((article) => !article.youtubeUrl) ?? articles[0]\", \"  const featuredArticle = articles[0]\")\n\n"
+          marker = "# PatientPages signature and page route\n"
+          if insertion not in source:
+              source = source.replace(marker, insertion + marker)
           path.write_text(source, encoding='utf-8')
           PY
 
