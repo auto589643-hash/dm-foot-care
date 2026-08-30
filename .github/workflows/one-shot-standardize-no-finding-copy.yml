@@ -1,0 +1,80 @@
+name: One-shot standardize no-finding copy
+
+on:
+  push:
+    branches:
+      - fix/standardize-no-finding-copy-20260830
+
+permissions:
+  contents: write
+
+jobs:
+  patch-copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Standardize no-finding copy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.tsx')
+          text = path.read_text(encoding='utf-8')
+
+          old = "'ยังไม่พบภาวะ'"
+          assert text.count(old) == 2, f'Expected 2 legacy summary labels, found {text.count(old)}'
+          text = text.replace(old, "'ไม่พบภาวะผิดปกติ'")
+
+          old_calendar = "<p>พบ {exam.findings.map((finding) => finding.name).join(' และ ') || 'ไม่พบภาวะตามเกณฑ์'}</p>"
+          new_calendar = "<p>{exam.findings.length ? `พบ ${exam.findings.map((finding) => finding.name).join(' และ ')}` : 'ไม่พบภาวะผิดปกติ'}</p>"
+          assert text.count(old_calendar) == 1, f'Expected 1 calendar label, found {text.count(old_calendar)}'
+          text = text.replace(old_calendar, new_calendar)
+
+          old_detail = '<span>ไม่พบภาวะที่ยืนยันในการตรวจครั้งนี้</span>'
+          assert text.count(old_detail) == 1, f'Expected 1 detail label, found {text.count(old_detail)}'
+          text = text.replace(old_detail, '<span>ไม่พบภาวะผิดปกติ</span>')
+
+          old_confirmed = "'ไม่พบภาวะที่ยืนยัน'"
+          assert text.count(old_confirmed) == 2, f'Expected 2 admin/history labels, found {text.count(old_confirmed)}'
+          text = text.replace(old_confirmed, "'ไม่พบภาวะผิดปกติ'")
+
+          assert 'ยังไม่พบภาวะ' not in text
+          assert 'ไม่พบภาวะตามเกณฑ์' not in text
+          assert 'ไม่พบภาวะที่ยืนยัน' not in text
+          assert text.count('ไม่พบภาวะผิดปกติ') == 7, f"Expected 7 standardized labels, found {text.count('ไม่พบภาวะผิดปกติ')}"
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/one-shot-standardize-no-finding-copy.yml').unlink()
+          PY
+
+      - name: Verify source copy
+        shell: bash
+        run: |
+          if grep -nE 'ยังไม่พบภาวะ|ไม่พบภาวะตามเกณฑ์|ไม่พบภาวะที่ยืนยัน' src/App.tsx; then
+            echo 'Legacy no-finding wording remains.'
+            exit 1
+          fi
+          test "$(grep -o 'ไม่พบภาวะผิดปกติ' src/App.tsx | wc -l | tr -d ' ')" = "7"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit exact copy changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Standardize no-finding wording across DMFC'
+          git push origin HEAD:${{ github.ref_name }}
