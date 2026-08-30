@@ -1,0 +1,49 @@
+name: One-shot no-finding copy fix
+
+on:
+  push:
+    branches:
+      - fix/no-finding-copy-20260830
+
+permissions:
+  contents: write
+
+jobs:
+  patch-copy:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/no-finding-copy-20260830
+          fetch-depth: 0
+
+      - name: Replace summary copy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('src/App.tsx')
+          text = app.read_text(encoding='utf-8')
+          old = 'ยังไม่พบภาวะจากรายการที่ตรวจ'
+          new = 'ไม่พบภาวะผิดปกติ'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly 1 target string, found {count}')
+          app.write_text(text.replace(old, new), encoding='utf-8')
+
+          workflow = Path('.github/workflows/one-shot-no-finding-copy.yml')
+          if workflow.exists():
+              workflow.unlink()
+          PY
+
+      - name: Commit exact copy change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx .github/workflows/one-shot-no-finding-copy.yml
+          git commit -m "Update no-finding summary copy"
+          git push origin HEAD:fix/no-finding-copy-20260830
