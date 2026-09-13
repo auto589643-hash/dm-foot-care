@@ -1,4 +1,4 @@
-import type { AdminDashboard, CareVideo, Disease, Examination, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, Severity, UserRecord } from '../types'
+import type { AdminDashboard, CareVideo, Disease, Examination, ExaminationReviewDetail, Finding, FootPosition, KnowledgeArticle, Profile, RegistrationInput, ResultReviewFinding, Severity, UserNotification, UserRecord } from '../types'
 import type { AiValidationResult } from './aiValidator.ts'
 
 export interface AuthService {
@@ -119,6 +119,7 @@ export interface AdminReadService {
   listKnowledge(): Promise<KnowledgeArticle[]>
   listCareVideos(): Promise<CareVideo[]>
   getDashboard(): Promise<AdminDashboard>
+  getExaminationReview(examinationId: string): Promise<ExaminationReviewDetail>
 }
 
 export type AdminUserWriteInput = Omit<UserRecord, 'id' | 'age' | 'lastExam' | 'pinConfigured'> & { id?: string; pin?: string }
@@ -135,6 +136,12 @@ export interface AdminService extends AdminReadService {
   setDiseaseActive(diseaseId: string, active: boolean): Promise<void>
   saveKnowledge(input: AdminKnowledgeWriteInput): Promise<KnowledgeArticle>
   saveCareVideo(input: AdminCareVideoWriteInput): Promise<CareVideo>
+  saveExaminationReview(input: { examinationId: string; expectedCurrentRevision: number; findings: ResultReviewFinding[]; reviewNote?: string; requestId: string }): Promise<{ noOp: boolean; idempotent: boolean; revisionNo: number; detail: ExaminationReviewDetail }>
+}
+
+export interface NotificationService {
+  listUnread(): Promise<UserNotification[]>
+  acknowledge(notificationId: string): Promise<UserNotification>
 }
 
 export const integrationGuardrails = {

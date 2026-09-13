@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req)
     const exam = await getOwnedExamination(session.user.id, examinationId)
     if (!exam) return sendJson(res, 404, { message: 'ไม่พบรายการตรวจ' })
+    if (exam.status === 'confirmed') return sendJson(res, 409, { message: 'ผลตรวจที่ส่งแล้วแก้ไขได้โดยเจ้าหน้าที่ผ่านระบบตรวจทานเท่านั้น' })
 
     const inputs = Array.isArray(body.findings) ? body.findings : [body]
     const requested = inputs.filter((finding) => finding?.diseaseId)

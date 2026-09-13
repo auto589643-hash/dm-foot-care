@@ -54,8 +54,9 @@ import { evaluateImageQuality, type ImageQualityResult } from './services/imageQ
 import { analyseLiveFrame, evaluateLiveFrameReadiness } from './services/liveCapture'
 import { createRuntimeIntegrationState, type RuntimeIntegrations } from './services/runtimeIntegrations'
 import { createAnalysisImages } from './services/thumbnailService'
+import { diffReviewFindings, hasMaterialReviewChange } from './services/reviewRevision'
 import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, KnowledgeLibraryService, OriginalImageArchive, ThumbnailService } from './services/contracts'
-import type { AdminDashboard, AdminDashboardRecentExam, CareVideo, Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, RegistrationInput, Sex, Severity, UserRecord } from './types'
+import type { AdminDashboard, AdminDashboardRecentExam, CareVideo, Disease, DiseaseSeverityLevel, Examination, ExaminationReviewDetail, Finding, FootPosition, KnowledgeArticle, Page, Profile, RegistrationInput, ResultReviewFinding, Sex, Severity, UserNotification, UserRecord } from './types'
 
 type ExamStage = 'intro' | 'capture' | 'review' | 'processing' | 'auto-result' | 'summary'
 type HistoryView = 'list' | 'calendar' | 'insight'
@@ -141,6 +142,19 @@ function App() {
   const [patientDiseases, setPatientDiseases] = useState<Disease[]>([])
   const [historyThumbnailsLoaded, setHistoryThumbnailsLoaded] = useState(false)
   const [patientKnowledgeMode, setPatientKnowledgeMode] = useState<'none' | 'featured' | 'full'>('none')
+  const [unreadNotifications, setUnreadNotifications] = useState<UserNotification[]>([])
+  const [notificationTargetExamId, setNotificationTargetExamId] = useState<string | null>(null)
+  const [notificationActionPending, setNotificationActionPending] = useState(false)
+
+  const loadUnreadNotifications = useCallback(async () => {
+    if (!integrations?.notifications) return
+    try {
+      const rows = await integrations.notifications.listUnread()
+      setUnreadNotifications(rows)
+    } catch {
+      // Notification failure must never block login or the examination workflow.
+    }
+  }, [integrations])
 
   const loadPatientExaminations = useCallback(async (includeThumbnails = false) => {
     if (!integrations?.repository.listForCurrentUser) return
@@ -193,6 +207,7 @@ function App() {
       if (nextProfile.role === 'user') {
         void loadPatientExaminations(false)
         void loadPatientKnowledge(true)
+        void loadUnreadNotifications()
       }
     }).catch(() => {
       // Keep the login screen actionable when the backend is temporarily unavailable.
@@ -200,7 +215,7 @@ function App() {
       if (!cancelled) setRestoring(false)
     })
     return () => { cancelled = true }
-  }, [integrations, loadPatientExaminations, loadPatientKnowledge])
+  }, [integrations, loadPatientExaminations, loadPatientKnowledge, loadUnreadNotifications])
 
   useEffect(() => {
     if (!toast) return
@@ -216,6 +231,7 @@ function App() {
     if (nextProfile.role === 'user') {
       void loadPatientExaminations(false)
       void loadPatientKnowledge(true)
+      void loadUnreadNotifications()
     }
   }
 
@@ -233,6 +249,8 @@ function App() {
     setPatientDiseases([])
     setHistoryThumbnailsLoaded(false)
     setPatientKnowledgeMode('none')
+    setUnreadNotifications([])
+    setNotificationTargetExamId(null)
     setProfileOpen(false)
     setProfileDialog(null)
     setExamStage('intro')
@@ -253,6 +271,25 @@ function App() {
   if (!profile) return <LoginScreen onLogin={login} authService={integrations.auth} />
 
   const navItems = profile.role === 'admin' ? doctorNav : patientNav
+  const activeNotification = profile.role === 'user' ? unreadNotifications[0] : undefined
+  const acknowledgeNotification = async (notification: UserNotification) => {
+    if (notificationActionPending) return
+    setNotificationActionPending(true)
+    try {
+      await integrations.notifications.acknowledge(notification.id)
+      setUnreadNotifications((current) => current.filter((item) => item.id !== notification.id))
+    } catch {
+      setToast('ยืนยันการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setNotificationActionPending(false)
+    }
+  }
+  const openUpdatedResult = (notification: UserNotification) => {
+    setNotificationTargetExamId(notification.examinationId)
+    setPage('history')
+    void loadPatientExaminations(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <div className="app-shell">
@@ -267,6 +304,7 @@ function App() {
           onProfile={() => { setProfileDialog('profile'); setProfileOpen(false) }}
           onAccessibility={() => { setProfileDialog('accessibility'); setProfileOpen(false) }}
         />
+        {activeNotification ? <ResultUpdateBanner notification={activeNotification} pending={notificationActionPending} remaining={unreadNotifications.length} onView={() => openUpdatedResult(activeNotification)} onAcknowledge={() => void acknowledgeNotification(activeNotification)} /> : null}
         <main id="main-content" className="main-content">
           {profile.role === 'user' ? (
               <PatientPages
@@ -282,6 +320,8 @@ function App() {
               integrations={integrations}
               onExamCompleted={(exam) => setPatientExaminations((current) => [exam, ...current.filter((item) => item.id !== exam.id)])}
               showToast={setToast}
+              openExaminationId={notificationTargetExamId}
+              onExaminationOpened={() => setNotificationTargetExamId(null)}
             />
           ) : (
             <DoctorPages page={page} setPage={goTo} showToast={setToast} adminService={integrations.admin} auditLogger={integrations.audit} />
@@ -293,6 +333,10 @@ function App() {
       {profileDialog ? <ProfileDialog profile={profile} mode={profileDialog} onClose={() => setProfileDialog(null)} /> : null}
     </div>
   )
+}
+
+function ResultUpdateBanner({ notification, pending, remaining, onView, onAcknowledge }: { notification: UserNotification; pending: boolean; remaining: number; onView: () => void; onAcknowledge: () => void }) {
+  return <aside className="result-update-banner" role="status" aria-live="polite"><span className="result-update-icon"><FileCheck2 size={21} /></span><div><strong>{notification.title}</strong><p>{notification.body}</p>{remaining > 1 ? <small>มีผลอัปเดตที่ยังไม่ได้อ่าน {remaining} รายการ</small> : null}</div><div className="result-update-actions"><button className="button button-primary button-small" type="button" onClick={onView}>ดูผลที่อัปเดต</button><button className="button button-ghost button-small" type="button" disabled={pending} onClick={onAcknowledge}>{pending ? 'กำลังยืนยัน…' : 'รับทราบ'}</button></div></aside>
 }
 
 function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => void; authService: AuthService }) {
@@ -502,7 +546,7 @@ function Avatar({ profile }: { profile: Profile }) {
   return <span className={profile.role === 'admin' ? 'avatar doctor' : 'avatar'} aria-hidden="true">{profile.role === 'admin' ? 'AD' : profile.displayName.slice(0, 2)}</span>
 }
 
-function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, careVideos: patientVideos, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; careVideos: CareVideo[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void }) {
+function PatientPages({ profile, page, setPage, examStage, setExamStage, examinations: patientExaminations, knowledgeArticles: patientKnowledge, careVideos: patientVideos, diseaseRecords: patientDiseases, integrations, onExamCompleted, showToast, openExaminationId, onExaminationOpened }: { profile: Profile; page: Page; setPage: (page: Page) => void; examStage: ExamStage; setExamStage: (stage: ExamStage) => void; examinations: Examination[]; knowledgeArticles: KnowledgeArticle[]; careVideos: CareVideo[]; diseaseRecords: Disease[]; integrations: RuntimeIntegrations; onExamCompleted: (exam: Examination) => void; showToast: (text: string) => void; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
   const [hasDraft, setHasDraft] = useState(false)
   useEffect(() => {
     let cancelled = false
@@ -515,7 +559,7 @@ function PatientPages({ profile, page, setPage, examStage, setExamStage, examina
   }, [page])
 
   if (page === 'exam') return <ExaminationFlow profile={profile} diseaseRecords={patientDiseases} integrations={integrations} stage={examStage} setStage={setExamStage} onHome={() => setPage('home')} onCompleted={onExamCompleted} />
-  if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} />
+  if (page === 'history') return <HistoryPage examinations={patientExaminations} diseaseRecords={patientDiseases} openExaminationId={openExaminationId} onExaminationOpened={onExaminationOpened} />
   if (page === 'knowledge') return <KnowledgePage articles={patientKnowledge} diseaseRecords={patientDiseases} showToast={showToast} knowledgeService={integrations.knowledge} />
   if (page === 'videos') return <CareVideoPage videos={patientVideos} />
   return <PatientHome profile={profile} examinations={patientExaminations} articles={patientKnowledge} hasDraft={hasDraft} onStart={() => { setExamStage('intro'); setPage('exam') }} onResume={() => { void readExaminationDraft().then((draft) => { if (draft) { setExamStage(draft.stage); setPage('exam') } }) }} onHistory={() => setPage('history')} onKnowledge={() => setPage('knowledge')} />
@@ -1270,9 +1314,15 @@ function PageBack({ onClick, children }: { onClick: () => void; children: ReactN
   return <button className="page-back" type="button" onClick={onClick}><ArrowLeft size={18} />{children}</button>
 }
 
-function HistoryPage({ examinations: patientExaminations, diseaseRecords }: { examinations: Examination[]; diseaseRecords: Disease[] }) {
+function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
   const [view, setView] = useState<HistoryView>('list')
   const [selected, setSelected] = useState<Examination | null>(null)
+  const targetedExamination = openExaminationId ? patientExaminations.find((exam) => exam.id === openExaminationId) ?? null : null
+  const activeSelected = targetedExamination ?? selected
+  const closeSelected = () => {
+    setSelected(null)
+    if (targetedExamination) onExaminationOpened?.()
+  }
   return (
     <div className="page history-page">
       <PageTitle eyebrow="ติดตามสุขภาพเท้า" title="ประวัติการตรวจ" description="ดูผลย้อนหลัง วันที่ตรวจ และแนวโน้มการเปลี่ยนแปลง" />
@@ -1282,7 +1332,7 @@ function HistoryPage({ examinations: patientExaminations, diseaseRecords }: { ex
         <HistoryTab icon={Activity} label="แนวโน้ม" value="insight" active={view === 'insight'} onClick={setView} />
       </div>
       {view === 'list' ? <HistoryList examinations={patientExaminations} onSelect={setSelected} /> : view === 'calendar' ? <HistoryCalendar examinations={patientExaminations} onSelect={setSelected} /> : <HistoryInsight examinations={patientExaminations} onSelect={setSelected} />}
-      {selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}
+      {activeSelected ? <ExaminationDetail exam={activeSelected} diseaseRecords={diseaseRecords} onClose={closeSelected} /> : null}
     </div>
   )
 }
@@ -1298,7 +1348,8 @@ function HistoryTab({ icon: Icon, label, value, active, onClick }: { icon: typeo
 function HistoryList({ examinations: patientExaminations, onSelect }: { examinations: Examination[]; onSelect: (exam: Examination) => void }) {
   return (
     <div className="history-content"><div className="history-summary-bar"><span><ClipboardCheck size={19} /><strong>ตรวจแล้ว {patientExaminations.length} ครั้ง</strong></span><small>ข้อมูลตั้งแต่ {patientExaminations.at(-1)?.displayDate ?? 'ยังไม่มีข้อมูล'}</small></div>{patientExaminations.length ? <div className="exam-list">
-      {patientExaminations.map((exam, index) => { const thumbnail = exam.thumbnails?.['left-dorsal']; return <article className="exam-card" key={exam.id}><div className="exam-date-block"><strong>{exam.displayDate.split(' ')[0]}</strong><span>{exam.displayDate.split(' ').slice(1).join(' ')}</span><small>{exam.time} น.</small></div><div className={thumbnail ? 'exam-thumb has-image' : 'exam-thumb'} role={thumbnail ? 'img' : undefined} aria-label={thumbnail ? 'ภาพย่อจากการตรวจ' : undefined} style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}>{!thumbnail ? <Footprints size={30} /> : null}<span>4 ภาพ</span></div><div className="exam-findings"><span className="eyebrow">{index === 0 ? 'ล่าสุด' : exam.id}</span><h2>พบ {exam.findings.length} รายการ</h2><div>{exam.findings.map((finding) => <span key={finding.diseaseId} className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.name} · {finding.severity}</span>)}</div></div><button className="exam-open" type="button" onClick={() => onSelect(exam)} aria-label={`ดูผลวันที่ ${exam.displayDate}`}>ดูรายละเอียด<ChevronRight size={19} /></button></article> })}
+      {patientExaminations.map((exam, index) => { const thumbnail = exam.thumbnails?.['left-dorsal']; return <article className="exam-card" key={exam.id}><div className="exam-date-block"><strong>{exam.displayDate.split(' ')[0]}</strong><span>{exam.displayDate.split(' ').slice(1).join(' ')}</span><small>{exam.time} น.</small></div><div className={thumbnail ? 'exam-thumb has-image' : 'exam-thumb'} role={thumbnail ? 'img' : undefined} aria-label={thumbnail ? 'ภาพย่อจากการตรวจ' : undefined} style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}>{!thumbnail ? <Footprints size={30} /> : null}<span>4 ภาพ</span></div><div className="exam-findings"><span className="eyebrow">{exam.reviewed ? 'เจ้าหน้าที่ตรวจทานแล้ว' : index === 0 ? 'ล่าสุด' : exam.id}</span><h2>พบ {exam.findings.length} รายการ</h2><div>{exam.findings.map((finding) => <span key={finding.diseaseId} className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.name} · {finding.severity}</span>)}</div></div>
+<button className="exam-open" type="button" onClick={() => onSelect(exam)} aria-label={`ดูผลวันที่ ${exam.displayDate}`}>ดูรายละเอียด<ChevronRight size={19} /></button></article> })}
     </div> : <div className="empty-state"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เริ่มตรวจเท้าครั้งแรกเพื่อดูผลย้อนหลังและแนวโน้มการเปลี่ยนแปลง</p></div>}</div>
   )
 }
@@ -1382,7 +1433,7 @@ function ExaminationDetail({ exam, diseaseRecords = [], loadThumbnails, loadOrig
   }
 
   const detailStatus = thumbnailLoading ? 'กำลังเตรียมภาพตัวอย่าง…' : availablePhotos ? 'มีภาพตัวอย่าง ' + availablePhotos + ' จาก 4 มุม' : loadThumbnails ? 'ยังไม่มีภาพตัวอย่าง' : 'ยังไม่มีภาพสรุป'
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal examination-detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><header><div><span className="eyebrow">{exam.id}</span><h2 id="detail-title">ผลตรวจวันที่ {exam.displayDate}</h2><p>{exam.time} น. · {detailStatus}</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><section className="detail-photo-section"><div className="section-heading"><div><span className="eyebrow">ภาพจากการตรวจ</span><h3>ภาพเท้า 4 มุม</h3></div>{loadOriginalPhoto ? <span className="status-pill success"><Eye size={15} />แตะเพื่อดูต้นฉบับ</span> : availablePhotos ? <span className="status-pill success"><Eye size={15} />แตะรูปเพื่อขยาย</span> : null}</div><div className="detail-photo-row">{footSteps.map((step) => { const photo = resolvedPhotos[step.id]; const loadingOriginal = loadingPhoto === step.id; const enabled = Boolean(photo || loadOriginalPhoto); return <button type="button" key={step.id} className={photo ? 'detail-photo-button has-thumbnail' : thumbnailLoading ? 'detail-photo-button photo-loading' : 'detail-photo-button'} disabled={!enabled || Boolean(loadingPhoto && !loadingOriginal)} aria-label={loadOriginalPhoto ? 'เปิดรูปต้นฉบับ ' + step.label : photo ? 'เปิดดู ' + step.label : 'ไม่มีภาพ ' + step.label} onClick={() => void openPhoto(step.id)} style={photo ? { backgroundImage: 'url(' + photo + ')', backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>{loadingOriginal ? <span className="detail-photo-loader" aria-hidden="true" /> : photo ? <span className="detail-photo-zoom"><Eye size={17} /></span> : thumbnailLoading ? <span className="detail-photo-loader" aria-hidden="true" /> : <Eye size={28} />}<span className="detail-photo-label">{loadingOriginal ? 'กำลังเปิดต้นฉบับ…' : thumbnailLoading && !photo ? 'กำลังโหลด…' : step.short}</span></button> })}</div>{photoError ? <div className="form-error" role="alert"><AlertTriangle size={18} />{photoError}</div> : null}</section><section><h3>ภาวะที่พบ</h3><div className="finding-list">{exam.findings.length ? exam.findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />) : <div className="empty-inline"><CircleCheck size={18} /><span>ไม่พบภาวะผิดปกติ</span></div>}</div></section><section className="modal-recommendation"><HeartPulse size={22} /><div><h3>คำแนะนำ</h3>{(recommendationLines.length ? recommendationLines : ['ตรวจเท้าทุกวัน และติดต่อแพทย์หากมีอาการผิดปกติ']).map((line) => <p key={line}>{line}</p>)}</div></section><button className="button button-primary" type="button" onClick={onClose}>ปิดรายละเอียด</button></section>{selectedPhoto ? <HistoricalPhotoViewer position={selectedPhoto} photo={originalPhotos[selectedPhoto] ?? resolvedPhotos[selectedPhoto]} exam={exam} original={Boolean(loadOriginalPhoto && originalPhotos[selectedPhoto])} onClose={() => setSelectedPhoto(null)} /> : null}</div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal examination-detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title"><header><div><span className="eyebrow">{exam.reviewed ? 'เจ้าหน้าที่ตรวจทานแล้ว' : exam.id}</span><h2 id="detail-title">ผลตรวจวันที่ {exam.displayDate}</h2><p>{exam.time} น. · {detailStatus}</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header><section className="detail-photo-section"><div className="section-heading"><div><span className="eyebrow">ภาพจากการตรวจ</span><h3>ภาพเท้า 4 มุม</h3></div>{loadOriginalPhoto ? <span className="status-pill success"><Eye size={15} />แตะเพื่อดูต้นฉบับ</span> : availablePhotos ? <span className="status-pill success"><Eye size={15} />แตะรูปเพื่อขยาย</span> : null}</div><div className="detail-photo-row">{footSteps.map((step) => { const photo = resolvedPhotos[step.id]; const loadingOriginal = loadingPhoto === step.id; const enabled = Boolean(photo || loadOriginalPhoto); return <button type="button" key={step.id} className={photo ? 'detail-photo-button has-thumbnail' : thumbnailLoading ? 'detail-photo-button photo-loading' : 'detail-photo-button'} disabled={!enabled || Boolean(loadingPhoto && !loadingOriginal)} aria-label={loadOriginalPhoto ? 'เปิดรูปต้นฉบับ ' + step.label : photo ? 'เปิดดู ' + step.label : 'ไม่มีภาพ ' + step.label} onClick={() => void openPhoto(step.id)} style={photo ? { backgroundImage: 'url(' + photo + ')', backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>{loadingOriginal ? <span className="detail-photo-loader" aria-hidden="true" /> : photo ? <span className="detail-photo-zoom"><Eye size={17} /></span> : thumbnailLoading ? <span className="detail-photo-loader" aria-hidden="true" /> : <Eye size={28} />}<span className="detail-photo-label">{loadingOriginal ? 'กำลังเปิดต้นฉบับ…' : thumbnailLoading && !photo ? 'กำลังโหลด…' : step.short}</span></button> })}</div>{photoError ? <div className="form-error" role="alert"><AlertTriangle size={18} />{photoError}</div> : null}</section><section><h3>ภาวะที่พบ</h3><div className="finding-list">{exam.findings.length ? exam.findings.map((finding) => <FindingRow key={finding.diseaseId} finding={finding} />) : <div className="empty-inline"><CircleCheck size={18} /><span>ไม่พบภาวะผิดปกติ</span></div>}</div></section><section className="modal-recommendation"><HeartPulse size={22} /><div><h3>คำแนะนำ</h3>{(recommendationLines.length ? recommendationLines : ['ตรวจเท้าทุกวัน และติดต่อแพทย์หากมีอาการผิดปกติ']).map((line) => <p key={line}>{line}</p>)}</div></section><button className="button button-primary" type="button" onClick={onClose}>ปิดรายละเอียด</button></section>{selectedPhoto ? <HistoricalPhotoViewer position={selectedPhoto} photo={originalPhotos[selectedPhoto] ?? resolvedPhotos[selectedPhoto]} exam={exam} original={Boolean(loadOriginalPhoto && originalPhotos[selectedPhoto])} onClose={() => setSelectedPhoto(null)} /> : null}</div>
 }
 
 function HistoricalPhotoViewer({ position, photo, exam, original = false, onClose }: { position: FootPosition; photo?: string; exam: Examination; original?: boolean; onClose: () => void }) {
@@ -1617,6 +1668,115 @@ function UserManagement({ users, diseaseRecords, setUsers, showToast, adminServi
   </div>
 }
 
+function StaffReviewModal({ exam, diseaseRecords, adminService, onSaved, onClose }: { exam: Examination; diseaseRecords: Disease[]; adminService: AdminService; onSaved: (exam: Examination) => void; onClose: () => void }) {
+  const [detail, setDetail] = useState<ExaminationReviewDetail | null>(null)
+  const [draft, setDraft] = useState<ResultReviewFinding[]>([])
+  const [reviewNote, setReviewNote] = useState('')
+  const [thumbnails, setThumbnails] = useState<Partial<Record<FootPosition, string>>>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [requestId, setRequestId] = useState('')
+  const [addDiseaseId, setAddDiseaseId] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+      const [review, images] = await Promise.all([
+        adminService.getExaminationReview(exam.id),
+        adminService.getExaminationThumbnails(exam.id).catch(() => ({})),
+      ])
+      setDetail(review)
+      setDraft(review.currentFindings.map((finding) => ({ ...finding })))
+      setThumbnails(images)
+      setRequestId(crypto.randomUUID())
+    } catch (loadError) {
+      setError(loadError instanceof Error && loadError.message ? loadError.message : 'โหลดข้อมูลตรวจทานไม่สำเร็จ')
+    } finally { setLoading(false) }
+  }, [adminService, exam.id])
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([
+      adminService.getExaminationReview(exam.id),
+      adminService.getExaminationThumbnails(exam.id).catch(() => ({})),
+    ]).then(([review, images]) => {
+      if (cancelled) return
+      setDetail(review)
+      setDraft(review.currentFindings.map((finding) => ({ ...finding })))
+      setThumbnails(images)
+      setRequestId(crypto.randomUUID())
+    }).catch((loadError) => {
+      if (!cancelled) setError(loadError instanceof Error && loadError.message ? loadError.message : 'โหลดข้อมูลตรวจทานไม่สำเร็จ')
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [adminService, exam.id])
+
+  const retryLoad = () => {
+    setLoading(true)
+    setError('')
+    void load()
+  }
+
+  const original = detail?.currentFindings ?? []
+  const changes = diffReviewFindings(original, draft)
+  const material = hasMaterialReviewChange(original, draft)
+  const remainingDiseases = diseaseRecords.filter((disease) => disease.active && !draft.some((finding) => finding.diseaseId === disease.id))
+  const addFinding = () => {
+    const disease = diseaseRecords.find((item) => item.id === addDiseaseId)
+    if (!disease) return
+    const severity = getDiseaseSeverityLevels(disease)[0]?.label ?? 'เล็กน้อย'
+    setDraft((current) => [...current, { diseaseId: disease.id, name: disease.name, severity }].sort((a, b) => a.diseaseId.localeCompare(b.diseaseId)))
+    setAddDiseaseId('')
+  }
+  const changeSeverity = (diseaseId: string, severity: Severity) => setDraft((current) => current.map((finding) => finding.diseaseId === diseaseId ? { ...finding, severity } : finding))
+  const removeFinding = (diseaseId: string) => setDraft((current) => current.filter((finding) => finding.diseaseId !== diseaseId))
+
+  const save = async () => {
+    if (!detail || saving || !material) return
+    setSaving(true); setError('')
+    try {
+      const response = await adminService.saveExaminationReview({
+        examinationId: exam.id,
+        expectedCurrentRevision: detail.currentRevision,
+        findings: draft,
+        reviewNote,
+        requestId,
+      })
+      if (response.noOp) {
+        setError('ไม่มีการเปลี่ยนแปลงผลที่ผู้ใช้งานมองเห็น จึงไม่สร้าง revision หรือการแจ้งเตือนใหม่')
+        setDetail(response.detail)
+        setDraft(response.detail.currentFindings.map((finding) => ({ ...finding })))
+        return
+      }
+      setDetail(response.detail)
+      setDraft(response.detail.currentFindings.map((finding) => ({ ...finding })))
+      setReviewNote('')
+      setRequestId(crypto.randomUUID())
+      onSaved({ ...exam, findings: response.detail.currentFindings.map((finding) => ({ diseaseId: finding.diseaseId, name: finding.name, detected: true, severity: finding.severity, confidence: 0, comparison: 'ยังไม่มีข้อมูลเปรียบเทียบ' })), reviewed: true, resultRevisionNo: response.revisionNo, reviewedAt: new Date().toISOString() })
+    } catch (saveError) {
+      setError(saveError instanceof Error && saveError.message ? saveError.message : 'บันทึกผลตรวจทานไม่สำเร็จ ข้อมูลที่แก้ไว้ยังอยู่')
+    } finally { setSaving(false) }
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal staff-review-modal" role="dialog" aria-modal="true" aria-labelledby="staff-review-title"><header><div><span className="eyebrow">Staff review · {exam.displayDate}</span><h2 id="staff-review-title">ตรวจทานผลการตรวจ</h2><p>AI ต้นฉบับเป็นแบบอ่านอย่างเดียว · Revision ปัจจุบัน {detail?.currentRevision ?? 0}</p></div><button className="icon-button" type="button" aria-label="ปิดหน้าตรวจทาน" onClick={onClose}><X size={21} /></button></header>
+    {loading ? <div className="empty-state"><Clock3 size={30} /><h2>กำลังโหลดผลตรวจ</h2></div> : detail ? <>
+      <section className="review-photo-strip" aria-label="ภาพจากการตรวจ">{footSteps.map((step) => <div key={step.id}>{thumbnails[step.id] ? <img src={thumbnails[step.id]} alt={step.label} /> : <span><ImageIcon size={22} /></span>}<small>{step.short}</small></div>)}</section>
+      <section className="staff-review-section ai-original"><div className="section-heading"><div><span className="eyebrow">Read only</span><h3>ผลจาก AI ต้นฉบับ</h3></div><ShieldCheck size={19} /></div>{detail.originalAiFindings.filter((finding) => finding.detected !== false).length ? <div className="review-finding-list">{detail.originalAiFindings.filter((finding) => finding.detected !== false).map((finding) => <div key={finding.diseaseId}><strong>{finding.name}</strong><span>{finding.severity}</span></div>)}</div> : <p className="muted-copy">AI ไม่พบภาวะผิดปกติ</p>}</section>
+      <section className="staff-review-section"><div className="section-heading"><div><span className="eyebrow">Current final</span><h3>ผลที่ผู้ใช้งานจะเห็น</h3></div>{material ? <span className="status-pill attention">มีการแก้ไข</span> : <span className="status-pill success">ตรงกับผลปัจจุบัน</span>}</div>
+        <div className="review-editor-list">{draft.map((finding) => { const disease = diseaseRecords.find((item) => item.id === finding.diseaseId); const levels = getDiseaseSeverityLevels(disease); return <div className="review-editor-row" key={finding.diseaseId}><div><strong>{finding.name}</strong><small>{finding.diseaseId}</small></div><label><span>ระดับ</span><select value={finding.severity} onChange={(event) => changeSeverity(finding.diseaseId, event.target.value as Severity)}>{levels.map((level) => <option value={level.label} key={level.label}>{level.label}</option>)}</select></label><button className="button button-danger-outline button-small" type="button" onClick={() => removeFinding(finding.diseaseId)}>ระบุว่าไม่ถูกต้อง</button></div> })}</div>
+        <div className="review-add-row"><label><span>เพิ่มภาวะที่ AI ไม่พบ</span><select value={addDiseaseId} onChange={(event) => setAddDiseaseId(event.target.value)}><option value="">เลือกภาวะ</option>{remainingDiseases.map((disease) => <option value={disease.id} key={disease.id}>{disease.id} · {disease.name}</option>)}</select></label><button className="button button-secondary" type="button" disabled={!addDiseaseId} onClick={addFinding}><Plus size={17} />เพิ่มผล</button></div>
+      </section>
+      {material ? <section className="staff-review-section review-diff" aria-live="polite"><h3>สิ่งที่จะเปลี่ยนเมื่อบันทึก</h3><div><span>เพิ่ม {changes.added.length}</span><span>นำออก {changes.removed.length}</span><span>ปรับระดับ {changes.changed.length}</span></div></section> : null}
+      <label className="review-note-field"><span>บันทึกการตรวจทาน (ไม่บังคับ)</span><textarea maxLength={500} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="เหตุผลสั้น ๆ สำหรับ audit trail" /></label>
+      {detail.revisions.length ? <details className="revision-history"><summary>ประวัติการแก้ไข {detail.revisions.length} ครั้ง</summary>{detail.revisions.map((revision) => <div key={revision.id}><strong>Revision {revision.revisionNo}</strong><span>{revision.reviewedBy} · {new Date(revision.createdAt).toLocaleString('th-TH')}</span>{revision.reviewNote ? <p>{revision.reviewNote}</p> : null}</div>)}</details> : null}
+      {error ? <div className="form-error" role="alert"><AlertTriangle size={18} />{error}{/อีกคน|โหลดข้อมูลล่าสุด/.test(error) ? <button className="text-link" type="button" onClick={retryLoad}>โหลดล่าสุด</button> : null}</div> : null}
+      <div className="review-save-bar"><button className="button button-secondary" type="button" onClick={onClose}>ปิด</button><button className={saving ? 'button button-primary action-pending' : 'button button-primary'} type="button" disabled={saving || !material} onClick={() => void save()}>{saving ? 'กำลังบันทึก…' : 'บันทึก Revision'}</button></div>
+    </> : <div className="empty-state"><AlertTriangle size={30} /><h2>ไม่สามารถโหลดข้อมูลตรวจทาน</h2><button className="button button-secondary" type="button" onClick={retryLoad}>ลองใหม่</button></div>}
+  </section></div>
+}
+
 function UserActionConfirmModal({ action, onCancel, onConfirm }: { action: { kind: 'deactivate' | 'delete-request'; user: UserRecord }; onCancel: () => void; onConfirm: () => void }) {
   const deleting = action.kind === 'delete-request'
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><section className="detail-modal user-action-confirm" role="alertdialog" aria-modal="true" aria-labelledby="user-action-title" aria-describedby="user-action-description"><header><div><span className="eyebrow">ยืนยันการทำรายการ</span><h2 id="user-action-title">{deleting ? 'ลบคำขอลงทะเบียน?' : 'ปิดใช้งานบัญชี?'}</h2></div><button className="icon-button" type="button" aria-label="ยกเลิก" onClick={onCancel}><X size={21} /></button></header><div className="confirm-user"><span className="avatar">{action.user.name.slice(0,2)}</span><div><strong>{action.user.name}</strong><small>{action.user.username}</small></div></div><div id="user-action-description" className={deleting ? 'confirmation-note danger' : 'confirmation-note'}>{deleting ? <><strong>คำขอนี้จะถูกลบออกจากระบบ</strong><p>Profile และบัญชี Supabase Auth จะถูกลบ ทำให้ Username <b>{action.user.username}</b> สามารถใช้สมัครใหม่ได้ การทำรายการนี้ใช้ได้เฉพาะบัญชีที่ยังรออนุมัติและไม่มีประวัติการตรวจ</p></> : <><strong>บัญชีจะถูกย้ายไปถังขยะ</strong><p>User จะเข้าสู่ระบบไม่ได้ และจะไม่แสดงใน Dashboard หรือรายการผู้ใช้งานปกติ ข้อมูลและประวัติเดิมยังคงเก็บไว้และสามารถคืนสถานะภายหลังได้</p></>}</div><div className="confirm-actions"><button className="button button-secondary" type="button" onClick={onCancel}>ยกเลิก</button><button className="button button-danger" type="button" onClick={onConfirm}>{deleting ? 'ยืนยันลบคำขอ' : 'ยืนยันปิดใช้งาน'}</button></div></section></div>
@@ -1627,7 +1787,8 @@ function UserHistoryModal({ user, diseaseRecords, adminService, onClose }: { use
   const [history, setHistory] = useState<Examination[]>([])
   const [loading, setLoading] = useState(true)
   useEffect(() => { let cancelled = false; void adminService.listUserExaminations(user.id).then((records) => { if (!cancelled) setHistory(records) }).catch(() => { if (!cancelled) setHistory([]) }).finally(() => { if (!cancelled) setLoading(false) }); return () => { cancelled = true } }, [adminService, user.id])
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังจากฐานข้อมูลสำหรับการติดตาม</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ') || 'ไม่พบภาวะผิดปกติ'}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <ExaminationDetail key={selected.id} exam={selected} diseaseRecords={diseaseRecords} loadThumbnails={(examinationId) => adminService.getExaminationThumbnails(examinationId)} loadOriginalPhoto={(examinationId, position) => adminService.getExaminationOriginalImage(examinationId, position)} onClose={() => setSelected(null)} /> : null}</div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal user-history-modal" role="dialog" aria-modal="true" aria-labelledby="user-history-title"><header><div><span className="eyebrow">ประวัติผู้ใช้งาน · {user.username}</span><h2 id="user-history-title">{user.name}</h2><p>ผลตรวจย้อนหลังจากฐานข้อมูลสำหรับการติดตาม</p></div><button className="icon-button" type="button" aria-label="ปิด" onClick={onClose}><X size={21} /></button></header>{loading ? <div className="empty-state user-history-empty"><Clock3 size={32} /><h2>กำลังโหลดประวัติ</h2><p>กรุณารอสักครู่…</p></div> : history.length ? <div className="user-history-list">{history.map((exam) => <button className="user-history-card" type="button" key={exam.id} onClick={() => setSelected(exam)}><span className="user-history-date"><strong>{exam.displayDate.split(' ')[0]}</strong><small>{exam.displayDate.split(' ').slice(1).join(' ')}</small><small>{exam.time} น.</small></span><span className="user-history-summary"><strong>พบ {exam.findings.length} รายการ</strong><small>{exam.findings.map((finding) => `${finding.name} · ${finding.severity}`).join(' / ') || 'ไม่พบภาวะผิดปกติ'}</small></span><ChevronRight size={19} /></button>)}</div> : <div className="empty-state user-history-empty"><ClipboardCheck size={32} /><h2>ยังไม่มีประวัติการตรวจ</h2><p>เมื่อผู้ใช้งานส่งผลตรวจแล้ว รายการจะแสดงในส่วนนี้</p></div>}<button className="button button-primary" type="button" onClick={onClose}>ปิดประวัติ</button></section>{selected ? <StaffReviewModal key={selected.id} exam={selected} diseaseRecords={diseaseRecords} adminService={adminService} onSaved={(updated) => { setHistory((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated) }} onClose={() => setSelected(null)} />
+ : null}</div>
 }
 
 function UserFormModal({ user, onClose, onSave }: { user: UserRecord | null; onClose: () => void; onSave: (draft: UserFormDraft) => void | Promise<void> }) {

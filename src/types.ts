@@ -57,6 +57,53 @@ export interface Examination {
   findings: Finding[]
   status: 'complete' | 'processing' | 'draft'
   thumbnails?: Partial<Record<FootPosition, string>>
+  reviewed?: boolean
+  resultRevisionNo?: number
+  reviewedAt?: string
+}
+
+export interface ResultReviewFinding {
+  diseaseId: string
+  name: string
+  severity: Severity
+  detected?: boolean
+  imagePosition?: string | null
+}
+
+export interface ResultReviewChangeSet {
+  added: ResultReviewFinding[]
+  removed: ResultReviewFinding[]
+  changed: Array<{ diseaseId: string; fromSeverity: Severity; toSeverity: Severity }>
+}
+
+export interface ResultRevision {
+  id: string
+  revisionNo: number
+  reviewedFindings: ResultReviewFinding[]
+  changeSet: Partial<ResultReviewChangeSet>
+  reviewNote: string
+  reviewedBy: string
+  createdAt: string
+}
+
+export interface ExaminationReviewDetail {
+  examinationId: string
+  status: string
+  currentRevision: number
+  originalAiFindings: ResultReviewFinding[]
+  currentFindings: ResultReviewFinding[]
+  revisions: ResultRevision[]
+}
+
+export interface UserNotification {
+  id: string
+  type: 'result_updated'
+  examinationId: string
+  resultRevisionNo: number
+  title: string
+  body: string
+  acknowledgedAt: string | null
+  createdAt: string
 }
 
 export interface KnowledgeArticle {
