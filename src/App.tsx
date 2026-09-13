@@ -51,6 +51,7 @@ import { examinationPositions, runAnalysisWorkflow } from './services/analysisWo
 import { finalizeExamination } from './services/finalizeWorkflow'
 import { calculateAge, calculateGeneration, withDerivedProfile } from './services/profileMetrics'
 import { evaluateImageQuality, type ImageQualityResult } from './services/imageQuality'
+import { analyseLiveFrame, evaluateLiveFrameReadiness } from './services/liveCapture'
 import { createRuntimeIntegrationState, type RuntimeIntegrations } from './services/runtimeIntegrations'
 import { createAnalysisImages } from './services/thumbnailService'
 import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, KnowledgeLibraryService, OriginalImageArchive, ThumbnailService } from './services/contracts'
@@ -833,6 +834,7 @@ function ExamIntro({ hasDraft, onResume, onStart, onBack }: { hasDraft: boolean;
 type CameraState = 'checking' | 'ready' | 'denied' | 'unsupported'
 type QualityState = 'idle' | 'checking' | 'ready' | 'warning' | 'blocked'
 type QualityResult = ImageQualityResult
+type ScanState = 'searching' | 'hold-still' | 'countdown' | 'capturing' | 'fallback'
 
 async function inspectImageQuality(dataUrl: string): Promise<QualityResult> {
   return new Promise((resolve) => {
@@ -867,12 +869,22 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const cameraRequestRef = useRef(0)
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const previousLuminanceRef = useRef<Float32Array | null>(null)
+  const stableFramesRef = useRef(0)
+  const captureInProgressRef = useRef(false)
+  const captureTimerRef = useRef<number | null>(null)
+  const advanceTimerRef = useRef<number | null>(null)
+  const scanAnnouncementRef = useRef(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [captureMode, setCaptureMode] = useState<'self' | 'assisted'>('self')
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>('checking')
   const [qualityState, setQualityState] = useState<QualityState>('idle')
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(null)
+  const [scanState, setScanState] = useState<ScanState>('searching')
+  const [scanMessage, setScanMessage] = useState('กำลังเปิดกล้อง')
+  const [scanProgress, setScanProgress] = useState(0)
 
   const startCamera = useCallback(async () => {
     const requestId = cameraRequestRef.current + 1
@@ -912,6 +924,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     return () => {
       window.clearTimeout(timer)
       cameraRequestRef.current += 1
+      if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
+      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
       streamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [startCamera, position])
@@ -921,9 +935,20 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   }, [cameraState, photo])
 
   const clearPhoto = () => {
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
+    if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
+    advanceTimerRef.current = null
+    captureTimerRef.current = null
+    captureInProgressRef.current = false
+    stableFramesRef.current = 0
+    previousLuminanceRef.current = null
+    scanAnnouncementRef.current = false
     setPhotos((value) => ({ ...value, [position]: undefined }))
     setQualityState('idle')
     setQualityResult(null)
+    setScanState('searching')
+    setScanMessage('กำลังมองหาตำแหน่งเท้าในกรอบ')
+    setScanProgress(0)
     window.setTimeout(() => void startCamera(), 0)
   }
 
@@ -931,7 +956,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     setFacingMode((currentMode) => currentMode === 'environment' ? 'user' : 'environment')
   }
 
-  const setPhotoAndInspect = async (dataUrl: string, nextQualityResult?: QualityResult) => {
+  const setPhotoAndInspect = useCallback(async (dataUrl: string, nextQualityResult?: QualityResult) => {
     setPhotos((value) => ({ ...value, [position]: dataUrl }))
     setQualityState('checking')
     const result = nextQualityResult ?? await inspectImageQuality(dataUrl)
@@ -941,7 +966,25 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       window.speechSynthesis.cancel()
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(result.gate === 'ready' ? 'พร้อมถ่ายภาพต่อไป' : result.gate === 'warning' ? 'ภาพอาจใช้ได้ แนะนำให้ตรวจแสงหรือความชัดอีกครั้ง' : 'กรุณาถ่ายภาพใหม่'))
     }
-  }
+    if (result.gate === 'block') {
+      setScanState('fallback')
+      setScanMessage('ภาพนี้ยังใช้ไม่ได้ ระบบกำลังสแกนใหม่')
+      window.setTimeout(() => {
+        captureInProgressRef.current = false
+        stableFramesRef.current = 0
+        previousLuminanceRef.current = null
+        setPhotos((value) => ({ ...value, [position]: undefined }))
+        setQualityState('idle')
+        setQualityResult(null)
+        setScanState('searching')
+        setScanProgress(0)
+      }, 1200)
+      return
+    }
+    setScanState('capturing')
+    setScanMessage(result.gate === 'warning' ? 'บันทึกภาพพร้อมธงตรวจทานแล้ว' : 'บันทึกภาพแล้ว')
+    advanceTimerRef.current = window.setTimeout(() => onNext(), 950)
+  }, [audioEnabled, onNext, position, setPhotos])
 
   const readPhoto = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -952,11 +995,15 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     event.target.value = ''
   }
 
-  const capturePhoto = async () => {
+  const capturePhoto = useCallback(async () => {
     const video = videoRef.current
     if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
+      captureInProgressRef.current = false
       return
     }
+    captureInProgressRef.current = true
+    setScanState('capturing')
+    setScanMessage('กำลังบันทึกภาพ')
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
@@ -964,7 +1011,75 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     // A camera frame is already a rendered copy, so high-quality JPEG keeps
     // clinical detail while avoiding multi-megabyte PNG uploads on mobile.
     await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
-  }
+  }, [cameraState, setPhotoAndInspect])
+
+  useEffect(() => {
+    if (cameraState !== 'ready' || photo) return
+    const video = videoRef.current
+    if (!video) return
+    let active = true
+    let animationFrame = 0
+    let lastAnalysedAt = 0
+    const scanCanvas = scanCanvasRef.current ?? document.createElement('canvas')
+    scanCanvasRef.current = scanCanvas
+    scanCanvas.width = 96
+    scanCanvas.height = 96
+    const context = scanCanvas.getContext('2d', { willReadFrequently: true })
+    if (!context) {
+      setScanState('fallback')
+      setScanMessage('เปิดโหมดสแกนอัตโนมัติไม่ได้ ใช้ปุ่มถ่ายเองแทนได้')
+      return
+    }
+
+    const analyse = () => {
+      if (!active || captureInProgressRef.current || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) return
+      const now = performance.now()
+      if (now - lastAnalysedAt < 180) return
+      lastAnalysedAt = now
+      context.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height)
+      const frame = analyseLiveFrame(context.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data, scanCanvas.width, scanCanvas.height, previousLuminanceRef.current ?? undefined)
+      previousLuminanceRef.current = frame.luminanceSamples
+      const readiness = evaluateLiveFrameReadiness(frame)
+      stableFramesRef.current = readiness.ready ? stableFramesRef.current + 1 : 0
+      setScanProgress(Math.min(100, stableFramesRef.current * 25))
+      if (stableFramesRef.current < 4) {
+        if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
+        captureTimerRef.current = null
+        scanAnnouncementRef.current = false
+        setScanState(readiness.ready ? 'hold-still' : 'searching')
+        setScanMessage(readiness.ready ? 'อยู่นิ่งอีกสักครู่' : readiness.message)
+        return
+      }
+      setScanState('countdown')
+      setScanMessage('พร้อมแล้ว กำลังบันทึกอัตโนมัติ')
+      if (audioEnabled && !scanAnnouncementRef.current && typeof window.speechSynthesis !== 'undefined') {
+        scanAnnouncementRef.current = true
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance('อยู่นิ่ง ระบบกำลังบันทึกภาพ'))
+      }
+      if (!captureTimerRef.current) {
+        captureTimerRef.current = window.setTimeout(() => {
+          captureTimerRef.current = null
+          if (stableFramesRef.current >= 4 && !captureInProgressRef.current) void capturePhoto()
+        }, 650)
+      }
+    }
+
+    const schedule = () => {
+      if (!active) return
+      const modernVideo = video as HTMLVideoElement & { requestVideoFrameCallback?: (callback: () => void) => number }
+      if (typeof modernVideo.requestVideoFrameCallback === 'function') {
+        modernVideo.requestVideoFrameCallback(() => { analyse(); schedule() })
+      } else {
+        animationFrame = window.requestAnimationFrame(() => { analyse(); schedule() })
+      }
+    }
+    schedule()
+    return () => {
+      active = false
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
+    }
+  }, [audioEnabled, cameraState, capturePhoto, photo])
 
 
   const permissionMessage = cameraState === 'denied' ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้เว็บไซต์เข้าถึงกล้อง แล้วลองอีกครั้ง' : 'อุปกรณ์นี้ไม่รองรับกล้องบนเว็บ สามารถเลือกภาพจากเครื่องแทนได้'
@@ -982,21 +1097,22 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       </div>
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
         {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
-        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><strong>วางเท้าให้อยู่ภายในกรอบ</strong><span>ให้เห็นเท้าครบและภาพไม่สั่น</span></div></> : null}
+        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className={`camera-instruction scan-${scanState}`}><strong>{scanState === 'countdown' ? 'อยู่นิ่ง ระบบกำลังบันทึก' : scanState === 'capturing' ? 'กำลังบันทึกภาพ' : 'วางเท้าให้อยู่ภายในกรอบ'}</strong><span>{scanMessage}</span></div></> : null}
         <span className="viewfinder-corner vc-1" /><span className="viewfinder-corner vc-2" /><span className="viewfinder-corner vc-3" /><span className="viewfinder-corner vc-4" />
       </div>
       <div className="capture-controls">
         {!photo ? (
           <>
-            <p><Sparkles size={18} />{captureMode === 'self' ? `${current.hint} กดชัตเตอร์เมื่อพร้อม` : `ให้ผู้ช่วยถือโทรศัพท์ แล้ว${current.hint}`}</p>
-            <p className="capture-fallback-note"><Info size={17} />ขณะนี้ระบบช่วยตรวจแสงและความชัดบนเครื่อง หากการช่วยจัดกรอบอัตโนมัติไม่พร้อม คุณยังถ่ายหรืออัปโหลดภาพได้ตามปกติ</p>
+            <p><ScanLine size={18} />{captureMode === 'self' ? `${current.hint} ระบบจะบันทึกภาพเองเมื่อพร้อม` : `ให้ผู้ช่วยถือโทรศัพท์ แล้ว${current.hint} ระบบจะบันทึกเอง`}</p>
+            <p className="capture-fallback-note"><Info size={17} />ไม่ต้องกดชัตเตอร์ ระบบจะตรวจแสง ความชัด องค์ประกอบในกรอบ และความนิ่งต่อเนื่องก่อนบันทึกภาพ</p>
             {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
             <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
             <div className="camera-actions">
               <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
-              <button className="camera-shutter" type="button" aria-label="ถ่ายภาพ" disabled={cameraState !== 'ready'} onClick={() => void capturePhoto()}><span><Camera size={30} /></span></button>
+              <div className="scan-progress" aria-live="polite"><ScanLine size={25} /><strong>{scanState === 'countdown' ? 'พร้อมบันทึก' : scanState === 'hold-still' ? 'กำลังตรวจความนิ่ง' : scanState === 'capturing' ? 'กำลังบันทึก' : 'กำลังสแกน'}</strong><span>{scanProgress}%</span></div>
               <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>กลับกล้อง</span></button>
             </div>
+            <button className="manual-capture-fallback" type="button" disabled={cameraState !== 'ready' || scanState === 'capturing'} onClick={() => void capturePhoto()}><Camera size={16} />ถ่ายเองหากระบบสแกนไม่สำเร็จ</button>
           </>
         ) : (
           <div className={qualityIsBlocked ? 'quality-result failed' : qualityHasWarning ? 'quality-result warning' : 'quality-result'}>
