@@ -116,7 +116,42 @@ jobs:
 
           replaceOnce('onClick={() => void load()}>โหลดล่าสุด</button>', 'onClick={retryLoad}>โหลดล่าสุด</button>', 'staff conflict retry')
           replaceOnce('onClick={() => void load()}>ลองใหม่</button>', 'onClick={retryLoad}>ลองใหม่</button>', 'staff load retry')
+
+          replaceOnce(
+          `  useEffect(() => { void load() }, [load])
+
+            const retryLoad = () => {`,
+          `  useEffect(() => {
+              let cancelled = false
+              void Promise.all([
+                adminService.getExaminationReview(exam.id),
+                adminService.getExaminationThumbnails(exam.id).catch(() => ({})),
+              ]).then(([review, images]) => {
+                if (cancelled) return
+                setDetail(review)
+                setDraft(review.currentFindings.map((finding) => ({ ...finding })))
+                setThumbnails(images)
+                setRequestId(crypto.randomUUID())
+              }).catch((loadError) => {
+                if (!cancelled) setError(loadError instanceof Error && loadError.message ? loadError.message : 'โหลดข้อมูลตรวจทานไม่สำเร็จ')
+              }).finally(() => {
+                if (!cancelled) setLoading(false)
+              })
+              return () => { cancelled = true }
+            }, [adminService, exam.id])
+
+            const retryLoad = () => {`,
+            'staff initial load effect',
+          )
+
           fs.writeFileSync(path, text)
+
+          const testPath = 'tests/result_revision_notification_contract.test.ts'
+          let testText = fs.readFileSync(testPath, 'utf8')
+          const badRouteLine = testText.split('\n').find((line) => line.includes("'staff review route is wired'"))
+          if (!badRouteLine) throw new Error('staff review route contract marker missing')
+          testText = testText.replace(badRouteLine, "assert.match(router, /adminExaminationReview/, 'staff review route is wired')")
+          fs.writeFileSync(testPath, testText)
           NODE
           rm .github/dmfc-v31-patch.* .github/workflows/dmfc-v31-verify.yml
       - name: Install dependencies
