@@ -44,6 +44,16 @@ assert.match(app, /ผลประเมินเบื้องต้น/)
 assert.doesNotMatch(app, /AI แนะนำ: .*มั่นใจ/)
 assert.match(imageQuality, /gate: 'ready' \| 'warning' \| 'block'/)
 assert.match(liveCapture, /evaluateLiveFrameReadiness/)
+// Every view must get fresh capture refs, timers and progress; otherwise the
+// previous view's captureInProgress latch freezes the next view at 100%.
+assert.match(app, /<CaptureStep key=\{footSteps\[step\]\.id\}/)
+const cameraViewport = app.slice(app.indexOf('<div className={photo ?'), app.indexOf('<div className="capture-controls">'))
+assert.match(cameraViewport, /scan-progress-overlay/)
+assert.match(cameraViewport, /\{scanProgress\}%/)
+assert.match(cameraViewport, /\{current\.hint\}/)
+const steps = read('src/data.ts')
+assert.match(steps, /id: 'left-sole'/)
+assert.match(steps, /id: 'right-sole'/)
 console.log('DMFC feature update contract passed')
 
 assert.match(types, /export interface CareVideo/)

@@ -342,7 +342,10 @@ button:disabled { cursor: wait; opacity: .65; }
 .button-hero { width: min(100%, 430px); min-height: 74px; padding: 16px 26px; border: 1px solid rgba(255,255,255,.72); border-radius: 16px; font-size: 21px; box-shadow: 0 6px 8px rgba(3,25,74,.22); }
 .button-hero svg:first-child { width: 27px; height: 27px; }
 
-.camera-actions { display: grid; grid-template-columns: minmax(92px,1fr) 88px minmax(92px,1fr); align-items: center; gap: 16px; margin: 12px auto 5px; }
+.camera-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 12px auto 5px; }
+.camera-viewport .scan-progress-overlay { position: absolute; z-index: 3; top: 16px; right: 16px; min-height: 0; padding: 12px; max-width: calc(100% - 32px); background: #14243a; color: #fff; pointer-events: none; }
+.scan-progress-overlay span { font-size: 32px; line-height: 1.2; font-weight: 700; color: #fff; }
+.scan-progress-overlay strong { font-size: 13px; }
 .camera-shutter { width: 82px; height: 82px; margin: 0 auto; }
 .camera-shutter:disabled { cursor: not-allowed; opacity: .38; }
 .camera-action-button { min-height: 58px; padding: 7px 10px; border: 1px solid rgba(255,255,255,.28); border-radius: 14px; color: #fff; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; gap: 7px; font-weight: 700; }

@@ -804,7 +804,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
 
   if (!draftLoaded) return <main className="app-boot" aria-live="polite"><div className="boot-card"><BrandMark /><div className="boot-copy"><strong>DM Foot Care</strong><span>กำลังเปิดข้อมูลการตรวจ…</span></div><div className="boot-progress"><span /></div></div></main>
   if (stage === 'intro') return <ExamIntro hasDraft={Boolean(draftHint)} onResume={() => { if (draftHint) { setStep(draftHint.step); setPhotos(draftHint.photos); setStage(draftHint.stage) } }} onStart={() => { void clearExaminationDraft(); setDraftHint(null); setStep(0); setPhotos({}); setStage('capture') }} onBack={onHome} />
-  if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
+  if (stage === 'capture') return <CaptureStep key={footSteps[step].id} step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
   if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
   if (stage === 'processing') return <ProcessingScreen key={analysisAttempt} current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
   if (stage === 'auto-result') return <AutoResult photos={photos} findings={confirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
@@ -969,7 +969,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     if (result.gate === 'block') {
       setScanState('fallback')
       setScanMessage('ภาพนี้ยังใช้ไม่ได้ ระบบกำลังสแกนใหม่')
-      window.setTimeout(() => {
+      advanceTimerRef.current = window.setTimeout(() => {
         captureInProgressRef.current = false
         stableFramesRef.current = 0
         previousLuminanceRef.current = null
@@ -996,6 +996,9 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   }
 
   const capturePhoto = useCallback(async () => {
+    if (captureInProgressRef.current) return
+    if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
+    captureTimerRef.current = null
     const video = videoRef.current
     if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
       captureInProgressRef.current = false
@@ -1007,10 +1010,20 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
-    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+    try {
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Camera canvas unavailable')
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
     // A camera frame is already a rendered copy, so high-quality JPEG keeps
     // clinical detail while avoiding multi-megabyte PNG uploads on mobile.
     await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
+    } catch {
+      captureInProgressRef.current = false
+      stableFramesRef.current = 0
+      setScanProgress(0)
+      setScanState('fallback')
+      setScanMessage('บันทึกภาพไม่สำเร็จ กรุณาลองถ่ายอีกครั้ง')
+    }
   }, [cameraState, setPhotoAndInspect])
 
   useEffect(() => {
@@ -1020,6 +1033,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     let active = true
     let animationFrame = 0
     let lastAnalysedAt = 0
+    const prepareUntil = performance.now() + 2500
     const scanCanvas = scanCanvasRef.current ?? document.createElement('canvas')
     scanCanvasRef.current = scanCanvas
     scanCanvas.width = 96
@@ -1034,6 +1048,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     const analyse = () => {
       if (!active || captureInProgressRef.current || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) return
       const now = performance.now()
+      if (now < prepareUntil) return
       if (now - lastAnalysedAt < 180) return
       lastAnalysedAt = now
       context.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height)
@@ -1077,6 +1092,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     schedule()
     return () => {
       active = false
+      if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
+      captureTimerRef.current = null
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
   }, [audioEnabled, cameraState, capturePhoto, photo])
@@ -1097,7 +1114,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       </div>
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
         {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
-        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className={`camera-instruction scan-${scanState}`}><strong>{scanState === 'countdown' ? 'อยู่นิ่ง ระบบกำลังบันทึก' : scanState === 'capturing' ? 'กำลังบันทึกภาพ' : 'วางเท้าให้อยู่ภายในกรอบ'}</strong><span>{scanMessage}</span></div></> : null}
+        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className={`camera-instruction scan-${scanState}`}><strong>{current.label}</strong><span>{current.hint}</span><span>{scanMessage}</span></div></> : null}
+        {!photo ? (<div className="scan-progress scan-progress-overlay" role="progressbar" aria-label="ความคืบหน้าการจัดภาพ ไม่ใช่ความมั่นใจ AI" aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanProgress}><ScanLine size={25} /><strong>{scanState === 'countdown' ? 'พร้อมบันทึก' : scanState === 'hold-still' ? 'กำลังตรวจความนิ่ง' : scanState === 'capturing' ? 'กำลังบันทึก' : 'กำลังสแกน'}</strong><span>{scanProgress}%</span></div>) : null}
         <span className="viewfinder-corner vc-1" /><span className="viewfinder-corner vc-2" /><span className="viewfinder-corner vc-3" /><span className="viewfinder-corner vc-4" />
       </div>
       <div className="capture-controls">
@@ -1109,7 +1127,6 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
             <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
             <div className="camera-actions">
               <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
-              <div className="scan-progress" aria-live="polite"><ScanLine size={25} /><strong>{scanState === 'countdown' ? 'พร้อมบันทึก' : scanState === 'hold-still' ? 'กำลังตรวจความนิ่ง' : scanState === 'capturing' ? 'กำลังบันทึก' : 'กำลังสแกน'}</strong><span>{scanProgress}%</span></div>
               <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>กลับกล้อง</span></button>
             </div>
             <button className="manual-capture-fallback" type="button" disabled={cameraState !== 'ready' || scanState === 'capturing'} onClick={() => void capturePhoto()}><Camera size={16} />ถ่ายเองหากระบบสแกนไม่สำเร็จ</button>
