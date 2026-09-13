@@ -130,3 +130,20 @@ $$;
 -- 3. Patient A SELECT private thumbnail path under Patient B UUID => denied.
 -- 4. Doctor SELECT all examinations and CRUD active Disease/Knowledge records => allowed by staff RLS.
 -- 5. Backend transitions examination status only through the allowed state machine.
+
+-- DMFC v3.1 review/notification invariants
+do $$
+begin
+  if not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'result_revisions' and c.relrowsecurity) then
+    raise exception 'result_revisions must exist with RLS enabled';
+  end if;
+  if not exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = 'user_notifications' and c.relrowsecurity) then
+    raise exception 'user_notifications must exist with RLS enabled';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'result_revisions' and policyname = 'result_revisions_staff_select') then
+    raise exception 'result_revisions staff select policy is missing';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'user_notifications' and policyname = 'user_notifications_select_own') then
+    raise exception 'user_notifications own select policy is missing';
+  end if;
+end $$;

@@ -1,4 +1,4 @@
-import type { Examination, Finding, FootPosition, Profile, Severity } from '../types.ts'
+import type { Examination, ExaminationReviewDetail, Finding, FootPosition, Profile, ResultReviewFinding, Severity, UserNotification } from '../types.ts'
 import type { AiValidationResult } from './aiValidator.ts'
 import { buildOriginalDriveFilename } from './drivePath.ts'
 import { createThumbnails } from './thumbnailService.ts'
@@ -409,6 +409,10 @@ export class HttpAdminService implements AdminService {
     return this.client.get('/v1/admin/dashboard')
   }
 
+  async getExaminationReview(examinationId: string): Promise<ExaminationReviewDetail> {
+    return this.client.get(`/v1/admin/examinations/${encodeURIComponent(examinationId)}/review`)
+  }
+
   async listUsers(): Promise<import('../types.ts').UserRecord[]> {
     return readArrayResponse(await this.client.get<import('../types.ts').UserRecord[] | { users?: import('../types.ts').UserRecord[] }>('/v1/admin/users'), 'users')
   }
@@ -496,6 +500,30 @@ export class HttpAdminService implements AdminService {
       : await this.client.postJson<import('../types.ts').CareVideo | { video?: import('../types.ts').CareVideo }>(path, input)
     return readObjectResponse(response, 'video')
   }
+
+  async saveExaminationReview(input: { examinationId: string; expectedCurrentRevision: number; findings: ResultReviewFinding[]; reviewNote?: string; requestId: string }): Promise<{ noOp: boolean; idempotent: boolean; revisionNo: number; detail: ExaminationReviewDetail }> {
+    return this.client.postJson(`/v1/admin/examinations/${encodeURIComponent(input.examinationId)}/review`, {
+      expectedCurrentRevision: input.expectedCurrentRevision,
+      findings: input.findings.map(({ diseaseId, severity }) => ({ diseaseId, severity })),
+      reviewNote: input.reviewNote || '',
+      requestId: input.requestId,
+    })
+  }
+}
+
+export class HttpNotificationService {
+  private readonly client: BackendHttpClient
+  constructor(client: BackendHttpClient) { this.client = client }
+
+  async listUnread(): Promise<UserNotification[]> {
+    const response = await this.client.get<{ notifications?: UserNotification[] }>('/v1/notifications?unread=true')
+    return response.notifications ?? []
+  }
+
+  async acknowledge(notificationId: string): Promise<UserNotification> {
+    const response = await this.client.patchJson<{ notification: UserNotification }>('/v1/notifications', { notificationId })
+    return response.notification
+  }
 }
 
 function readArrayResponse<T>(response: T[] | Record<string, T[] | undefined>, key: string): T[] {
@@ -523,5 +551,6 @@ export function createHttpIntegrations(options: BackendHttpClientOptions & HttpA
     thumbnails: new HttpThumbnailService(client),
     repository: new HttpExaminationRepository(client),
     knowledge: new HttpKnowledgeLibraryService(client),
+    notifications: new HttpNotificationService(client),
   }
 }

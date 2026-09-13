@@ -74,17 +74,33 @@ export async function requireSupabaseUser(req, res) {
   return { token, user }
 }
 
+async function loadRole(userId) {
+  let role = cacheGet(roleCache, userId)
+  if (!role) {
+    const roles = await supabaseRest(`/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(userId)}&limit=1`)
+    role = roles[0]?.role || 'user'
+    cacheSet(roleCache, userId, role, ROLE_CACHE_TTL_MS)
+  }
+  return role
+}
+
 export async function requireAdminUser(req, res) {
   const session = await requireSupabaseUser(req, res)
   if (!session) return null
-  let role = cacheGet(roleCache, session.user.id)
-  if (!role) {
-    const roles = await supabaseRest(`/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(session.user.id)}&limit=1`)
-    role = roles[0]?.role || 'user'
-    cacheSet(roleCache, session.user.id, role, ROLE_CACHE_TTL_MS)
-  }
+  const role = await loadRole(session.user.id)
   if (role !== 'admin') {
     sendJson(res, 403, { message: 'สิทธิ์ผู้ดูแลระบบไม่เพียงพอ' })
+    return null
+  }
+  return { ...session, role }
+}
+
+export async function requireStaffUser(req, res) {
+  const session = await requireSupabaseUser(req, res)
+  if (!session) return null
+  const role = await loadRole(session.user.id)
+  if (role !== 'admin' && role !== 'doctor') {
+    sendJson(res, 403, { message: 'สิทธิ์เจ้าหน้าที่ไม่เพียงพอ' })
     return null
   }
   return { ...session, role }

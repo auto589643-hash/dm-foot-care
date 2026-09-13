@@ -50,7 +50,16 @@ export async function hydrateExaminationHistory(examinations, options = {}) {
   const imagesPromise = includeThumbnails
     ? supabaseRest(`/rest/v1/examination_images?select=examination_id,position,thumbnail_path&examination_id=in.(${encodeURIComponent(ids)})`)
     : Promise.resolve([])
-  const [findings, images] = await Promise.all([findingsPromise, imagesPromise])
+  const revisionsPromise = supabaseRest(`/rest/v1/result_revisions?select=examination_id,revision_no,created_at&examination_id=in.(${encodeURIComponent(ids)})&order=revision_no.desc`)
+    .catch((error) => {
+      if (error?.status === 404 || /result_revisions/i.test(String(error?.message || ''))) return []
+      throw error
+    })
+  const [findings, images, revisions] = await Promise.all([findingsPromise, imagesPromise, revisionsPromise])
+  const latestRevisionByExam = new Map()
+  for (const revision of revisions) {
+    if (!latestRevisionByExam.has(revision.examination_id)) latestRevisionByExam.set(revision.examination_id, revision)
+  }
   const findingsByExam = new Map()
   for (const finding of findings) {
     const list = findingsByExam.get(finding.examination_id) || []
@@ -89,6 +98,11 @@ export async function hydrateExaminationHistory(examinations, options = {}) {
       status: statusForClient(row.status),
       findings: findingsByExam.get(row.id) || [],
       thumbnails: thumbnailsByExam.get(row.id) || {},
+      ...(latestRevisionByExam.has(row.id) ? {
+        reviewed: true,
+        resultRevisionNo: latestRevisionByExam.get(row.id).revision_no,
+        reviewedAt: latestRevisionByExam.get(row.id).created_at,
+      } : {}),
       _timestamp: new Date(at).getTime(),
     }
   })
