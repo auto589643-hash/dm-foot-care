@@ -1,24 +1,59 @@
 import { handleOptions, readJsonBody, sendJson, setCors } from '../_lib/http.mjs'
-import { requireSupabaseUser, supabaseRest } from '../_lib/supabase.mjs'
+import { requireSupabaseUser, supabaseConfig, supabaseRest } from '../_lib/supabase.mjs'
+import { listCommittedResultRevisionsForExaminations, notificationFromRevision, revisionPayloadForServer } from '../_lib/result-revisions.mjs'
 
 function queryParam(req, name) {
   const value = req.query?.[name]
   return Array.isArray(value) ? value[0] : value
 }
-function isUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
+function isAuditId(value) {
+  return /^\d+$/.test(String(value || ''))
 }
-function mapNotification(row) {
-  return {
-    id: row.id,
-    type: row.type,
-    examinationId: row.examination_id,
-    resultRevisionNo: row.result_revision_no,
-    title: row.title,
-    body: row.body,
-    acknowledgedAt: row.acknowledged_at,
-    createdAt: row.created_at,
+async function authAdminUser(userId) {
+  const { url, serviceKey } = supabaseConfig()
+  const response = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}` },
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const error = new Error('ไม่สามารถอ่านสถานะการแจ้งเตือนได้')
+    error.status = response.status
+    throw error
   }
+  return payload?.user || payload
+}
+async function saveAcknowledgement(user, examinationId, revisionNo, acknowledgedAt) {
+  const { url, serviceKey } = supabaseConfig()
+  const currentMetadata = user?.app_metadata && typeof user.app_metadata === 'object' ? user.app_metadata : {}
+  const currentAck = currentMetadata.dmfc_result_revision_ack && typeof currentMetadata.dmfc_result_revision_ack === 'object'
+    ? currentMetadata.dmfc_result_revision_ack
+    : {}
+  const existing = currentAck[examinationId]
+  const existingRevision = Number(existing?.revisionNo) || 0
+  if (existingRevision >= revisionNo) return { acknowledgedAt: existing?.acknowledgedAt || acknowledgedAt, idempotent: true }
+
+  const appMetadata = {
+    ...currentMetadata,
+    dmfc_result_revision_ack: {
+      ...currentAck,
+      [examinationId]: { revisionNo, acknowledgedAt },
+    },
+  }
+  const response = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(user.id)}`, {
+    method: 'PUT',
+    headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ app_metadata: appMetadata }),
+  })
+  if (!response.ok) {
+    const error = new Error('ไม่สามารถยืนยันการแจ้งเตือนได้')
+    error.status = response.status
+    throw error
+  }
+  return { acknowledgedAt, idempotent: false }
+}
+function acknowledgementMap(user) {
+  const value = user?.app_metadata?.dmfc_result_revision_ack
+  return value && typeof value === 'object' ? value : {}
 }
 
 export default async function handler(req, res) {
@@ -29,37 +64,50 @@ export default async function handler(req, res) {
   if (!session) return
 
   try {
+    const user = await authAdminUser(session.user.id)
     if (req.method === 'GET') {
-      const unread = String(queryParam(req, 'unread') || 'true') !== 'false'
-      const filter = unread ? '&acknowledged_at=is.null' : ''
-      let rows
-      try {
-        rows = await supabaseRest('/rest/v1/user_notifications?select=id,type,examination_id,result_revision_no,title,body,acknowledged_at,created_at&user_id=eq.' + encodeURIComponent(session.user.id) + filter + '&order=created_at.asc,id.asc')
-      } catch (error) {
-        if (error?.status === 404 || /user_notifications/i.test(String(error?.message || ''))) return sendJson(res, 200, { notifications: [], schemaReady: false })
-        throw error
-      }
+      const unreadOnly = String(queryParam(req, 'unread') || 'true') !== 'false'
+      const examinations = await supabaseRest(`/rest/v1/examinations?select=id&user_id=eq.${encodeURIComponent(session.user.id)}&status=eq.confirmed&order=examined_at.desc.nullslast,created_at.desc`)
+      const revisions = await listCommittedResultRevisionsForExaminations(examinations.map((row) => row.id))
+      const ack = acknowledgementMap(user)
+      const notifications = revisions.flatMap((row) => {
+        const payload = revisionPayloadForServer(row)
+        const examinationId = String(payload.examinationId || row.entity_id || '')
+        if (String(payload.patientUserId || '') !== session.user.id) return []
+        const ackEntry = ack[examinationId]
+        const ackRevision = Number(ackEntry?.revisionNo) || 0
+        const revisionNo = Number(payload.revisionNo) || 0
+        if (unreadOnly && revisionNo <= ackRevision) return []
+        return [notificationFromRevision(row, revisionNo <= ackRevision ? ackEntry?.acknowledgedAt || null : null)]
+      })
+      notifications.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || Number(a.id) - Number(b.id))
       res.setHeader('Cache-Control', 'private, no-store')
-      return sendJson(res, 200, { notifications: rows.map(mapNotification), schemaReady: true })
+      return sendJson(res, 200, { notifications, schemaReady: true })
     }
 
     const body = await readJsonBody(req)
     const notificationId = String(body.notificationId || queryParam(req, 'notificationId') || '')
-    if (!isUuid(notificationId)) return sendJson(res, 400, { message: 'รหัสการแจ้งเตือนไม่ถูกต้อง' })
+    if (!isAuditId(notificationId)) return sendJson(res, 400, { message: 'รหัสการแจ้งเตือนไม่ถูกต้อง' })
 
-    const rows = await supabaseRest('/rest/v1/user_notifications?select=id,type,examination_id,result_revision_no,title,body,acknowledged_at,created_at&id=eq.' + encodeURIComponent(notificationId) + '&user_id=eq.' + encodeURIComponent(session.user.id) + '&limit=1')
-    const notification = rows[0]
-    if (!notification) return sendJson(res, 404, { message: 'ไม่พบการแจ้งเตือน' })
-    if (notification.acknowledged_at) return sendJson(res, 200, { notification: mapNotification(notification), idempotent: true })
+    const rows = await supabaseRest(`/rest/v1/audit_logs?select=id,entity_id,payload,occurred_at&id=eq.${encodeURIComponent(notificationId)}&event_type=eq.human_review_edited&entity_type=eq.examination&limit=1`)
+    const revision = rows[0]
+    if (!revision) return sendJson(res, 404, { message: 'ไม่พบการแจ้งเตือน' })
+    const payload = revisionPayloadForServer(revision)
+    if (payload.kind !== 'staff_result_revision_v1' || payload.state !== 'committed') return sendJson(res, 404, { message: 'ไม่พบการแจ้งเตือน' })
+
+    const examinationId = String(payload.examinationId || revision.entity_id || '')
+    const owned = await supabaseRest(`/rest/v1/examinations?select=id&id=eq.${encodeURIComponent(examinationId)}&user_id=eq.${encodeURIComponent(session.user.id)}&limit=1`)
+    if (!owned[0] || String(payload.patientUserId || '') !== session.user.id) return sendJson(res, 404, { message: 'ไม่พบการแจ้งเตือน' })
+
+    const revisionNo = Number(payload.revisionNo) || 0
+    const existing = acknowledgementMap(user)[examinationId]
+    if ((Number(existing?.revisionNo) || 0) >= revisionNo) {
+      return sendJson(res, 200, { notification: notificationFromRevision(revision, existing?.acknowledgedAt || null), idempotent: true })
+    }
 
     const acknowledgedAt = new Date().toISOString()
-    const updated = await supabaseRest('/rest/v1/user_notifications?id=eq.' + encodeURIComponent(notificationId) + '&user_id=eq.' + encodeURIComponent(session.user.id), {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ acknowledged_at: acknowledgedAt }),
-    })
-    if (!updated?.length) return sendJson(res, 404, { message: 'ไม่พบการแจ้งเตือน' })
-    return sendJson(res, 200, { notification: mapNotification(updated[0]), idempotent: false })
+    const saved = await saveAcknowledgement(user, examinationId, revisionNo, acknowledgedAt)
+    return sendJson(res, 200, { notification: notificationFromRevision(revision, saved.acknowledgedAt), idempotent: saved.idempotent })
   } catch (error) {
     console.error('notification request failed', { status: error?.status || 500 })
     return sendJson(res, 500, { message: 'ไม่สามารถโหลดหรือยืนยันการแจ้งเตือนได้' })
