@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     const profile = await loadProfileForUser(session.user.id)
     const records = await supabaseRest(`/rest/v1/profiles?select=account_status&user_id=eq.${encodeURIComponent(session.user.id)}&limit=1`)
     if (!profile || records[0]?.account_status !== 'active') return sendJson(res, 403, { message: 'บัญชียังไม่ได้รับอนุมัติหรือถูกปิดใช้งาน' })
-    if ('refreshToken' in session) setRefreshCookie(res, session.refreshToken)
+    if ('refreshToken' in session) setRefreshCookie(res, session.refreshToken, req)
     return sendJson(res, 200, { accessToken: session.token, profile })
   } catch (error) {
     console.error('session failed', error)

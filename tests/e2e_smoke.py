@@ -91,19 +91,17 @@ with sync_playwright() as p:
     mobile.set_offline(False)
     page.get_by_role("button", name="ลองประเมินอีกครั้ง").wait_for()
     page.get_by_role("button", name="ลองประเมินอีกครั้ง").click()
-    page.get_by_role("heading", name="AI แนะนำ 2 รายการ").wait_for(timeout=6000)
-    page.get_by_text("AI แนะนำ: พบ · มั่นใจ 91%").wait_for()
+    page.get_by_role("heading", name="พบสิ่งที่ควรติดตาม 2 รายการ").wait_for(timeout=6000)
+    assert page.get_by_text("มั่นใจ", exact=False).count() == 0
     page.get_by_role("button", name="ดูหลังเท้าซ้าย").click()
     page.get_by_role("heading", name="หลังเท้าซ้าย", exact=True).wait_for()
     page.get_by_role("dialog").get_by_role("button", name="กลับไปตรวจผล").click()
-    # Change only the confirmed severity; the original AI suggestion remains visible for auditability.
-    page.locator(".severity-select select").first.select_option(label="รุนแรง")
-    print("Human review loaded", flush=True)
+    print("Auto result loaded", flush=True)
     screenshot(page, "05-human-review-mobile.png")
-    page.get_by_role("button", name="ยืนยันและส่งผลตรวจ").click()
+    page.get_by_role("button", name="บันทึกผลการประเมิน").click()
     page.get_by_role("heading", name="ผลการตรวจเท้า").wait_for()
     assert page.locator(".summary-photo-grid .summary-photo").count() == 4
-    assert page.locator(".summary-page .severity-label", has_text="รุนแรง").count() >= 1
+    assert page.locator(".summary-page .severity-label").count() >= 1
     summary_date = page.locator(".summary-date").inner_text().split(" · ")[0]
     page.wait_for_timeout(150)
     summary_scroll = page.evaluate("window.scrollY")

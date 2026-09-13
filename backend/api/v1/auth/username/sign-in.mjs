@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     res.setHeader('Server-Timing', `signin;dur=${Date.now() - startedAt}`)
     console.info(JSON.stringify({ event: 'dmfc_signin_timing', success: Boolean(session), totalMs: Date.now() - startedAt }))
     if (!session) return sendJson(res, 401, { message: 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง หรือบัญชีไม่ได้เปิดใช้งาน' })
-    setRefreshCookie(res, session.refreshToken)
+    setRefreshCookie(res, session.refreshToken, req)
     const { refreshToken: _refreshToken, ...clientSession } = session
     void _refreshToken
     return sendJson(res, 200, clientSession)

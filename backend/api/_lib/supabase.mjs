@@ -90,10 +90,42 @@ export async function requireAdminUser(req, res) {
   return { ...session, role }
 }
 
-export function setRefreshCookie(res, refreshToken) {
+function normalizeOrigin(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    return new URL(raw.startsWith('http') ? raw : `https://${raw}`).origin
+  } catch {
+    return ''
+  }
+}
+
+function backendRequestOrigin(req) {
+  const forwardedHost = String(req?.headers?.['x-forwarded-host'] || '').split(',')[0].trim()
+  const host = forwardedHost || String(req?.headers?.host || '').trim()
+  if (!host) return ''
+  const forwardedProtocol = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim()
+  const protocol = forwardedProtocol || (process.env.NODE_ENV === 'development' ? 'http' : 'https')
+  return normalizeOrigin(`${protocol}://${host}`)
+}
+
+/**
+ * Same-origin deployments keep the stricter Lax cookie. A separately hosted
+ * configured frontend requires SameSite=None for the refresh cookie to be sent
+ * on credentialed API requests after a reload. This never reflects arbitrary
+ * request origins: it only activates for the configured frontend origin.
+ */
+function refreshCookieSameSite(req) {
+  const frontendOrigin = normalizeOrigin(String(process.env.FRONTEND_ORIGIN || '').split(',')[0])
+  const apiOrigin = backendRequestOrigin(req)
+  return frontendOrigin && apiOrigin && frontendOrigin !== apiOrigin ? 'None' : 'Lax'
+}
+
+export function setRefreshCookie(res, refreshToken, req) {
   const configured = Number(process.env.DMFC_SESSION_MAX_AGE_SECONDS)
   const maxAge = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SESSION_MAX_AGE
-  setCookie(res, REFRESH_COOKIE, refreshToken, { maxAge, httpOnly: true, secure: process.env.NODE_ENV !== 'development', sameSite: 'Lax' })
+  const sameSite = refreshCookieSameSite(req)
+  setCookie(res, REFRESH_COOKIE, refreshToken, { maxAge, httpOnly: true, secure: sameSite === 'None' || process.env.NODE_ENV !== 'development', sameSite })
 }
 
 export function clearRefreshCookie(res) {

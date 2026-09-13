@@ -56,7 +56,7 @@ import { createAnalysisImages } from './services/thumbnailService'
 import type { AdminService, AuthService, ExaminationRepository, FootAssessmentProvider, KnowledgeLibraryService, OriginalImageArchive, ThumbnailService } from './services/contracts'
 import type { AdminDashboard, AdminDashboardRecentExam, CareVideo, Disease, DiseaseSeverityLevel, Examination, Finding, FootPosition, KnowledgeArticle, Page, Profile, RegistrationInput, Sex, Severity, UserRecord } from './types'
 
-type ExamStage = 'intro' | 'capture' | 'review' | 'processing' | 'human-review' | 'summary'
+type ExamStage = 'intro' | 'capture' | 'review' | 'processing' | 'auto-result' | 'summary'
 type HistoryView = 'list' | 'calendar' | 'insight'
 
 const severityRank: Record<Severity, number> = { เล็กน้อย: 1, ปานกลาง: 2, รุนแรง: 3 }
@@ -731,7 +731,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
       setAiFindings(analysis.findings)
       setConfirmedFindings(cloneFindings(analysis.findings))
       setProcessStep(3)
-      window.setTimeout(() => { if (!cancelled) setStage('human-review') }, 120)
+      window.setTimeout(() => { if (!cancelled) setStage('auto-result') }, 120)
     }).catch((error) => {
       if (cancelled) return
       console.error('Foot analysis workflow failed', error)
@@ -795,7 +795,7 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
   if (stage === 'capture') return <CaptureStep step={step} photos={photos} setPhotos={setPhotos} onNext={() => { if (step === 3) { setStage('review'); void ensureExaminationDraft() } else { setStep((value) => value + 1) } }} onBack={() => step === 0 ? setStage('intro') : setStep((value) => value - 1)} />
   if (stage === 'review') return <PhotoReview photos={photos} onRetake={(index) => { setStep(index); setStage('capture') }} onEvaluate={() => void beginAnalysis()} onBack={() => { setStep(3); setStage('capture') }} />
   if (stage === 'processing') return <ProcessingScreen key={analysisAttempt} current={processStep} error={analysisError} onRetry={() => { setAnalysisError(''); setProcessStep(0); setAnalysisAttempt((value) => value + 1) }} />
-  if (stage === 'human-review') return <HumanReview photos={photos} diseaseRecords={diseaseRecords} aiFindings={aiFindings} confirmedFindings={confirmedFindings} setConfirmedFindings={setConfirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
+  if (stage === 'auto-result') return <AutoResult photos={photos} findings={confirmedFindings} submitError={finalizeError} onSubmit={() => void finalize()} isSubmitting={isFinalizing} onBack={() => setStage('review')} />
   return completedExam ? <SummaryReport examination={completedExam} photos={thumbnails} diseaseRecords={diseaseRecords} onHome={onHome} onRestart={reset} /> : null
 }
 
@@ -820,7 +820,7 @@ function ExamIntro({ hasDraft, onResume, onStart, onBack }: { hasDraft: boolean;
 }
 
 type CameraState = 'checking' | 'ready' | 'denied' | 'unsupported'
-type QualityState = 'idle' | 'checking' | 'passed' | 'retry'
+type QualityState = 'idle' | 'checking' | 'ready' | 'warning' | 'blocked'
 type QualityResult = ImageQualityResult
 
 async function inspectImageQuality(dataUrl: string): Promise<QualityResult> {
@@ -843,7 +843,7 @@ async function inspectImageQuality(dataUrl: string): Promise<QualityResult> {
       const variance = luminances.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / luminances.length
       resolve(evaluateImageQuality({ width: image.naturalWidth, height: image.naturalHeight, meanLuminance: mean, luminanceVariance: variance }))
     }
-    image.onerror = () => resolve({ passed: false, message: 'อ่านภาพไม่สำเร็จ ลองเลือกไฟล์หรือถ่ายภาพใหม่', checks: [{ label: 'อ่านภาพได้', passed: false }] })
+    image.onerror = () => resolve({ passed: false, gate: 'block', message: 'อ่านภาพไม่สำเร็จ ลองเลือกไฟล์หรือถ่ายภาพใหม่', checks: [{ label: 'อ่านภาพได้', passed: false, level: 'block' }] })
     image.src = dataUrl
   })
 }
@@ -857,6 +857,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const streamRef = useRef<MediaStream | null>(null)
   const cameraRequestRef = useRef(0)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [captureMode, setCaptureMode] = useState<'self' | 'assisted'>('self')
+  const [audioEnabled, setAudioEnabled] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>('checking')
   const [qualityState, setQualityState] = useState<QualityState>('idle')
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(null)
@@ -923,7 +925,11 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     setQualityState('checking')
     const result = nextQualityResult ?? await inspectImageQuality(dataUrl)
     setQualityResult(result)
-    setQualityState(result.passed ? 'passed' : 'retry')
+    setQualityState(result.gate === 'ready' ? 'ready' : result.gate === 'warning' ? 'warning' : 'blocked')
+    if (audioEnabled && typeof window.speechSynthesis !== 'undefined') {
+      window.speechSynthesis.cancel()
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(result.gate === 'ready' ? 'พร้อมถ่ายภาพต่อไป' : result.gate === 'warning' ? 'ภาพอาจใช้ได้ แนะนำให้ตรวจแสงหรือความชัดอีกครั้ง' : 'กรุณาถ่ายภาพใหม่'))
+    }
   }
 
   const readPhoto = (event: ChangeEvent<HTMLInputElement>) => {
@@ -951,11 +957,18 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
 
 
   const permissionMessage = cameraState === 'denied' ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้เว็บไซต์เข้าถึงกล้อง แล้วลองอีกครั้ง' : 'อุปกรณ์นี้ไม่รองรับกล้องบนเว็บ สามารถเลือกภาพจากเครื่องแทนได้'
+  const qualityIsBlocked = qualityResult?.gate === 'block'
+  const qualityHasWarning = qualityResult?.gate === 'warning'
 
   return (
     <div className="capture-page">
       <header className="capture-header"><button className="icon-button" type="button" aria-label="ย้อนกลับ" onClick={onBack}><ArrowLeft size={22} /></button><div><strong>{current.label}</strong><span>{step + 1} จาก 4</span></div><button className="text-button" type="button" onClick={() => { setPhotos({}); clearPhoto() }}>เริ่มใหม่</button></header>
       <div className="step-segments" aria-label={`ขั้นตอน ${step + 1} จาก 4`}>{footSteps.map((item, index) => <span key={item.id} className={index <= step ? 'complete' : ''} />)}</div>
+      <div className="capture-mode-bar" role="group" aria-label="รูปแบบการถ่ายภาพ">
+        <button className={captureMode === 'self' ? 'selected' : ''} type="button" onClick={() => setCaptureMode('self')}>ถ่ายด้วยตนเอง</button>
+        <button className={captureMode === 'assisted' ? 'selected' : ''} type="button" onClick={() => setCaptureMode('assisted')}>ให้ผู้อื่นช่วยถ่าย</button>
+        <button className={audioEnabled ? 'audio-toggle enabled' : 'audio-toggle'} type="button" aria-pressed={audioEnabled} onClick={() => setAudioEnabled((enabled) => !enabled)}>เสียงแนะนำ: {audioEnabled ? 'เปิด' : 'ปิด'}</button>
+      </div>
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
         {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
         {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><strong>วางเท้าให้อยู่ภายในกรอบ</strong><span>ให้เห็นเท้าครบและภาพไม่สั่น</span></div></> : null}
@@ -964,7 +977,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       <div className="capture-controls">
         {!photo ? (
           <>
-            <p><Sparkles size={18} />{current.hint}</p>
+            <p><Sparkles size={18} />{captureMode === 'self' ? `${current.hint} กดชัตเตอร์เมื่อพร้อม` : `ให้ผู้ช่วยถือโทรศัพท์ แล้ว${current.hint}`}</p>
+            <p className="capture-fallback-note"><Info size={17} />ขณะนี้ระบบช่วยตรวจแสงและความชัดบนเครื่อง หากการช่วยจัดกรอบอัตโนมัติไม่พร้อม คุณยังถ่ายหรืออัปโหลดภาพได้ตามปกติ</p>
             {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
             <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
             <div className="camera-actions">
@@ -974,10 +988,11 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
             </div>
           </>
         ) : (
-          <div className={qualityState === 'retry' ? 'quality-result failed' : 'quality-result'}>
-            <div className="quality-heading"><span>{qualityState === 'passed' ? <CircleCheck size={21} /> : qualityState === 'retry' ? <AlertTriangle size={21} /> : <Clock3 size={21} />}</span><div><strong>{qualityState === 'passed' ? 'ภาพนี้อยู่ในเกณฑ์เบื้องต้น' : qualityState === 'retry' ? 'แนะนำให้ถ่ายภาพใหม่' : 'กำลังตรวจสอบภาพ…'}</strong><small>{qualityResult?.message ?? 'ระบบกำลังเช็กแสง ความละเอียด และความชัด'}</small></div></div>
+          <div className={qualityIsBlocked ? 'quality-result failed' : qualityHasWarning ? 'quality-result warning' : 'quality-result'}>
+            <div className="quality-heading"><span>{qualityState === 'ready' ? <CircleCheck size={21} /> : qualityState === 'blocked' ? <AlertTriangle size={21} /> : qualityState === 'warning' ? <Info size={21} /> : <Clock3 size={21} />}</span><div><strong>{qualityState === 'ready' ? 'ภาพนี้อยู่ในเกณฑ์เบื้องต้น' : qualityState === 'blocked' ? 'กรุณาถ่ายภาพใหม่' : qualityState === 'warning' ? 'ภาพนี้ยังใช้ต่อได้' : 'กำลังตรวจสอบภาพ…'}</strong><small>{qualityResult?.message ?? 'ระบบกำลังเช็กแสง ความละเอียด และความชัด'}</small></div></div>
             {qualityResult ? <div className="quality-checks">{qualityResult.checks.map((check) => <span className={check.passed ? '' : 'failed'} key={check.label}>{check.passed ? <Check size={15} /> : <X size={15} />}{check.label}</span>)}</div> : null}
-            <button className="button button-primary button-large" type="button" disabled={qualityState !== 'passed'} onClick={onNext}>{step === 3 ? 'ตรวจดูภาพทั้งหมด' : 'ใช้ภาพนี้และถ่ายภาพต่อไป'}<ArrowRight size={20} /></button>
+            {qualityHasWarning ? <p className="quality-override-note">ระบบจะติดธงคุณภาพภาพนี้ไว้เพื่อให้ผู้ดูแลตรวจทานเพิ่ม คุณสามารถถ่ายใหม่ได้หากต้องการ</p> : null}
+            <button className="button button-primary button-large" type="button" disabled={qualityState === 'checking' || qualityIsBlocked} onClick={onNext}>{step === 3 ? 'ตรวจดูภาพทั้งหมด' : 'ใช้ภาพนี้และถ่ายภาพต่อไป'}<ArrowRight size={20} /></button>
             <button className="button button-ghost" type="button" onClick={clearPhoto}><RotateCcw size={18} />ถ่ายใหม่</button>
           </div>
         )}
@@ -1051,28 +1066,27 @@ function ProcessingScreen({ current, error, onRetry }: { current: number; error:
   )
 }
 
-function HumanReview({ photos, diseaseRecords, aiFindings, confirmedFindings, setConfirmedFindings, submitError, onSubmit, isSubmitting, onBack }: { photos: Partial<Record<FootPosition, string>>; diseaseRecords: Disease[]; aiFindings: Finding[]; confirmedFindings: Finding[]; setConfirmedFindings: React.Dispatch<React.SetStateAction<Finding[]>>; submitError?: string; onSubmit: () => void; isSubmitting?: boolean; onBack: () => void }) {
+function AutoResult({ photos, findings, submitError, onSubmit, isSubmitting, onBack }: { photos: Partial<Record<FootPosition, string>>; findings: Finding[]; submitError?: string; onSubmit: () => void; isSubmitting?: boolean; onBack: () => void }) {
   const [selectedPhoto, setSelectedPhoto] = useState<FootPosition | null>(null)
-  const detectedCount = confirmedFindings.filter((finding) => finding.detected).length
-  const updateFinding = (id: string, patch: Partial<Finding>) => setConfirmedFindings((current) => current.map((finding) => finding.diseaseId === id ? { ...finding, ...patch } : finding))
+  const detectedFindings = findings.filter((finding) => finding.detected)
   return (
-    <div className="page narrow-page human-review-page">
+    <div className="page narrow-page human-review-page auto-result-page">
       <PageBack onClick={onBack}>กลับไปดูภาพ</PageBack>
-      <div className="review-title-row"><div><span className="eyebrow">ตรวจทานผล</span><h1>AI แนะนำ {detectedCount} รายการ</h1></div><span className="ai-badge"><Sparkles size={16} />ผลช่วยประเมิน</span></div>
-      <p className="page-lead">ตรวจความถูกต้อง เลือกหรือยกเลิกรายการ และปรับระดับก่อนส่งผลตรวจ</p>
+      <div className="review-title-row"><div><span className="eyebrow">ผลประเมินเบื้องต้น</span><h1>{detectedFindings.length ? `พบสิ่งที่ควรติดตาม ${detectedFindings.length} รายการ` : 'ยังไม่พบสิ่งที่ควรติดตาม'}</h1></div><span className="ai-badge"><Sparkles size={16} />ผลช่วยประเมิน</span></div>
+      <p className="page-lead">ระบบแสดงผลอัตโนมัติจากภาพที่ส่งแล้ว โดยไม่ต้องเลือกยืนยันรายการเอง ผู้ดูแลสามารถตรวจทานและปรับผลภายหลังได้</p>
       <div className="review-image-strip">{footSteps.map((item, index) => { const photo = photos[item.id]; return <button type="button" key={item.id} aria-label={`ดู${item.label}`} onClick={() => setSelectedPhoto(item.id)} style={photo ? { backgroundImage: `url(${photo})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>{!photo ? <Footprints size={24} /> : null}<span>{index + 1}</span></button> })}</div>
-      <div className="checklist-heading"><h2>รายการที่ตรวจ</h2><span>{detectedCount} จาก {confirmedFindings.length} รายการ</span></div>
+      <div className="checklist-heading"><h2>สิ่งที่พบ</h2><span>{detectedFindings.length} รายการ</span></div>
       <div className="condition-checklist">
-        {confirmedFindings.map((finding) => (
-          <article className={finding.detected ? 'condition-item selected' : 'condition-item'} key={finding.diseaseId}>
-            <label className="condition-check"><input type="checkbox" checked={finding.detected} onChange={(event) => updateFinding(finding.diseaseId, { detected: event.target.checked })} /><span className="custom-checkbox"><Check size={16} /></span><span><strong>{finding.name}</strong><small>AI แนะนำ: {aiFindings.find((item) => item.diseaseId === finding.diseaseId)?.detected ? 'พบ' : 'ไม่พบ'} · มั่นใจ {aiFindings.find((item) => item.diseaseId === finding.diseaseId)?.confidence ?? 0}%</small></span></label>
-            {finding.detected ? <label className="severity-select">ระดับ<select value={finding.severity} onChange={(event) => updateFinding(finding.diseaseId, { severity: event.target.value as Severity })}>{getDiseaseSeverityLevels(diseaseRecords.find((disease) => disease.id === finding.diseaseId)).map((level) => <option value={level.label} key={level.label}>{level.label}</option>)}</select><ChevronDown size={16} /></label> : <span className="not-found-label">ไม่พบ</span>}
+        {detectedFindings.map((finding) => (
+          <article className="condition-item selected auto-result-item" key={finding.diseaseId}>
+            <div className="condition-check"><span className="result-check"><Check size={16} /></span><span><strong>{finding.name}</strong><small>ระดับที่ระบบประเมิน: {finding.severity}</small></span></div>
+            <span className={`severity-label severity-${severityRank[finding.severity]}`}>{finding.severity}</span>
           </article>
         ))}
       </div>
-      <div className="review-explainer"><Info size={19} /><p>ผล AI ต้นฉบับจะถูกเก็บแยกจากรายการที่คุณยืนยัน เพื่อให้ผู้ดูแลตรวจสอบย้อนหลังได้</p></div>
+      <div className="review-explainer"><Info size={19} /><p>ผล AI ต้นฉบับถูกเก็บแยกจากการตรวจทานของผู้ดูแล เพื่อใช้ติดตามการเปลี่ยนแปลงย้อนหลัง ผลนี้เป็นเครื่องมือช่วยติดตาม ไม่ใช่การวินิจฉัยโรค</p></div>
       {submitError ? <div className="form-error review-submit-error" role="alert"><AlertTriangle size={18} />{submitError}</div> : null}
-      <button className={isSubmitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="button" disabled={isSubmitting} onClick={onSubmit}><FileCheck2 size={21} />{isSubmitting ? 'กำลังเตรียมภาพสรุป…' : 'ยืนยันและส่งผลตรวจ'}</button>
+      <button className={isSubmitting ? 'button button-primary button-large action-pending' : 'button button-primary button-large'} type="button" disabled={isSubmitting} onClick={onSubmit}><FileCheck2 size={21} />{isSubmitting ? 'กำลังเตรียมภาพสรุป…' : 'บันทึกผลการประเมิน'}</button>
       {selectedPhoto ? <PhotoViewer position={selectedPhoto} photo={photos[selectedPhoto]} onClose={() => setSelectedPhoto(null)} /> : null}
     </div>
   )

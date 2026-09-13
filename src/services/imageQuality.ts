@@ -8,10 +8,13 @@ export interface ImageQualityMetrics {
 export interface ImageQualityCheck {
   label: string
   passed: boolean
+  /** A warning may be reviewed later; only a block prevents an unusable upload. */
+  level?: 'ready' | 'warning' | 'block'
 }
 
 export interface ImageQualityResult {
   passed: boolean
+  gate: 'ready' | 'warning' | 'block'
   message: string
   checks: ImageQualityCheck[]
 }
@@ -27,7 +30,10 @@ export function evaluateImageQuality(metrics: ImageQualityMetrics): ImageQuality
   const framingOk = aspectRatio >= 0.55 && aspectRatio <= 1.8
   const brightnessOk = metrics.meanLuminance === undefined || (metrics.meanLuminance >= 35 && metrics.meanLuminance <= 232)
   const detailOk = metrics.luminanceVariance === undefined || metrics.luminanceVariance >= 18
-  const passed = dimensionOk && framingOk && brightnessOk && detailOk
+  const hardBlock = !dimensionOk || !framingOk
+  const hasWarning = !brightnessOk || !detailOk
+  const gate = hardBlock ? 'block' : hasWarning ? 'warning' : 'ready'
+  const passed = gate === 'ready'
   const message = !dimensionOk
     ? 'ภาพมีความละเอียดต่ำเกินไป ลองถือโทรศัพท์ให้ใกล้ขึ้นเล็กน้อย'
     : !framingOk
@@ -39,12 +45,13 @@ export function evaluateImageQuality(metrics: ImageQualityMetrics): ImageQuality
           : 'ภาพอยู่ในเกณฑ์เบื้องต้น'
   return {
     passed,
+    gate,
     message,
     checks: [
-      { label: 'ความละเอียดเพียงพอ', passed: dimensionOk },
-      { label: 'จัดภาพในกรอบเหมาะสม', passed: framingOk },
-      { label: 'แสงพอดี', passed: brightnessOk },
-      { label: 'มีรายละเอียดชัด', passed: detailOk },
+      { label: 'ความละเอียดเพียงพอ', passed: dimensionOk, level: dimensionOk ? 'ready' : 'block' },
+      { label: 'จัดภาพในกรอบเหมาะสม', passed: framingOk, level: framingOk ? 'ready' : 'block' },
+      { label: 'แสงพอดี', passed: brightnessOk, level: brightnessOk ? 'ready' : 'warning' },
+      { label: 'มีรายละเอียดชัด', passed: detailOk, level: detailOk ? 'ready' : 'warning' },
     ],
   }
 }
