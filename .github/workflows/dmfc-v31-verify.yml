@@ -1,0 +1,43 @@
+name: DMFC v3.1 validation
+
+on:
+  push:
+    branches:
+      - verify/dmfc-v31-staff-review-20260913
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply scoped implementation
+        run: |
+          cat .github/dmfc-v31-patch.* | base64 -d | gzip -d > /tmp/implement_dmfc_v31.mjs
+          node --check /tmp/implement_dmfc_v31.mjs
+          node /tmp/implement_dmfc_v31.mjs
+          rm .github/dmfc-v31-patch.* .github/workflows/dmfc-v31-verify.yml
+      - name: Install dependencies
+        run: npm ci
+      - name: Whitespace verification
+        run: git diff --check
+      - name: Full repository verification
+        run: npm run verify
+      - name: Commit tested implementation
+        run: |
+          git status --short
+          git config user.name "dmfc-maintenance-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(dmfc): add staff result revisions and durable notifications"
+          git push origin HEAD:verify/dmfc-v31-staff-review-20260913
