@@ -144,6 +144,7 @@ jobs:
             'staff initial load effect',
           )
 
+          replaceOnce('alt={step.title}', 'alt={step.label}', 'staff review photo alt')
           fs.writeFileSync(path, text)
 
           const testPath = 'tests/result_revision_notification_contract.test.ts'
