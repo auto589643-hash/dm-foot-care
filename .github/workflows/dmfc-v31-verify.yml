@@ -23,6 +23,12 @@ jobs:
       - name: Apply scoped implementation
         run: |
           cat .github/dmfc-v31-patch.* | base64 -d | gzip -d > /tmp/implement_dmfc_v31.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/implement_dmfc_v31.mjs')
+          text = path.read_text()
+          path.write_text(text.replace('\\\\\\\\/', '\\\\/'))
+          PY
           node --check /tmp/implement_dmfc_v31.mjs
           node /tmp/implement_dmfc_v31.mjs
           rm .github/dmfc-v31-patch.* .github/workflows/dmfc-v31-verify.yml
