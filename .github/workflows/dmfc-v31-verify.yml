@@ -27,7 +27,12 @@ jobs:
           from pathlib import Path
           path = Path('/tmp/implement_dmfc_v31.mjs')
           text = path.read_text()
-          path.write_text(text.replace('\\\\\\\\/', '\\\\/'))
+          text = text.replace('\\\\\\\\/', '\\\\/')
+          text = text.replace(
+              "  const source = read(path)\n  if (!source.includes(from)) throw new Error(`Patch marker not found in ${path}: ${from.slice(0,120)}`)\n",
+              "  let source = read(path)\n  if (!source.includes(from) && from.endsWith('\\n') && source.includes(from.slice(0, -1))) from = from.slice(0, -1)\n  if (!source.includes(from)) throw new Error(`Patch marker not found in ${path}: ${from.slice(0,120)}`)\n",
+          )
+          path.write_text(text)
           PY
           node --check /tmp/implement_dmfc_v31.mjs
           node /tmp/implement_dmfc_v31.mjs
