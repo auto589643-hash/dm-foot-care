@@ -27,7 +27,7 @@ jobs:
           from pathlib import Path
           path = Path('/tmp/implement_dmfc_v31.mjs')
           text = path.read_text()
-          text = text.replace('\\\\\\\\/', '\\\\/')
+          text = text.replace('\\\\/', '\\/')
           text = text.replace(
               "  const source = read(path)\n  if (!source.includes(from)) throw new Error(`Patch marker not found in ${path}: ${from.slice(0,120)}`)\n",
               "  let source = read(path)\n  if (!source.includes(from) && from.endsWith('\\n') && source.includes(from.slice(0, -1))) from = from.slice(0, -1)\n  if (!source.includes(from)) throw new Error(`Patch marker not found in ${path}: ${from.slice(0,120)}`)\n",
@@ -36,6 +36,88 @@ jobs:
           PY
           node --check /tmp/implement_dmfc_v31.mjs
           node /tmp/implement_dmfc_v31.mjs
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const path = 'src/App.tsx'
+          let text = fs.readFileSync(path, 'utf8')
+          function replaceOnce(from, to, label) {
+            const index = text.indexOf(from)
+            if (index < 0) throw new Error(`${label} marker missing`)
+            if (text.indexOf(from, index + from.length) >= 0) throw new Error(`${label} marker not unique`)
+            text = text.slice(0, index) + to + text.slice(index + from.length)
+          }
+
+          replaceOnce(
+`function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
+  const [view, setView] = useState<HistoryView>('list')
+  const [selected, setSelected] = useState<Examination | null>(null)
+  useEffect(() => {
+    if (!openExaminationId) return
+    const target = patientExaminations.find((exam) => exam.id === openExaminationId)
+    if (!target) return
+    setSelected(target)
+    setView('list')
+    onExaminationOpened?.()
+  }, [openExaminationId, onExaminationOpened, patientExaminations])
+  return (
+`,
+`function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
+  const [view, setView] = useState<HistoryView>('list')
+  const [selected, setSelected] = useState<Examination | null>(null)
+  const targetedExamination = openExaminationId ? patientExaminations.find((exam) => exam.id === openExaminationId) ?? null : null
+  const activeSelected = targetedExamination ?? selected
+  const closeSelected = () => {
+    setSelected(null)
+    if (targetedExamination) onExaminationOpened?.()
+  }
+  return (
+`,
+            'history deep link',
+          )
+
+          replaceOnce(
+            `      {selected ? <ExaminationDetail exam={selected} diseaseRecords={diseaseRecords} onClose={() => setSelected(null)} /> : null}`,
+            `      {activeSelected ? <ExaminationDetail exam={activeSelected} diseaseRecords={diseaseRecords} onClose={closeSelected} /> : null}`,
+            'history selected detail',
+          )
+
+          replaceOnce(
+`  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  const [addDiseaseId, setAddDiseaseId] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+`,
+`  const [requestId, setRequestId] = useState('')
+  const [addDiseaseId, setAddDiseaseId] = useState('')
+
+  const load = useCallback(async () => {
+    try {
+`,
+            'staff review load',
+          )
+
+          replaceOnce(
+`  useEffect(() => { void load() }, [load])
+
+  const original = detail?.currentFindings ?? []`,
+`  useEffect(() => { void load() }, [load])
+
+  const retryLoad = () => {
+    setLoading(true)
+    setError('')
+    void load()
+  }
+
+  const original = detail?.currentFindings ?? []`,
+            'staff retry',
+          )
+
+          replaceOnce('onClick={() => void load()}>โหลดล่าสุด</button>', 'onClick={retryLoad}>โหลดล่าสุด</button>', 'staff conflict retry')
+          replaceOnce('onClick={() => void load()}>ลองใหม่</button>', 'onClick={retryLoad}>ลองใหม่</button>', 'staff load retry')
+          fs.writeFileSync(path, text)
+          NODE
           rm .github/dmfc-v31-patch.* .github/workflows/dmfc-v31-verify.yml
       - name: Install dependencies
         run: npm ci
