@@ -48,30 +48,30 @@ jobs:
           }
 
           replaceOnce(
-`function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
-  const [view, setView] = useState<HistoryView>('list')
-  const [selected, setSelected] = useState<Examination | null>(null)
-  useEffect(() => {
-    if (!openExaminationId) return
-    const target = patientExaminations.find((exam) => exam.id === openExaminationId)
-    if (!target) return
-    setSelected(target)
-    setView('list')
-    onExaminationOpened?.()
-  }, [openExaminationId, onExaminationOpened, patientExaminations])
-  return (
-`,
-`function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
-  const [view, setView] = useState<HistoryView>('list')
-  const [selected, setSelected] = useState<Examination | null>(null)
-  const targetedExamination = openExaminationId ? patientExaminations.find((exam) => exam.id === openExaminationId) ?? null : null
-  const activeSelected = targetedExamination ?? selected
-  const closeSelected = () => {
-    setSelected(null)
-    if (targetedExamination) onExaminationOpened?.()
-  }
-  return (
-`,
+          `function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
+            const [view, setView] = useState<HistoryView>('list')
+            const [selected, setSelected] = useState<Examination | null>(null)
+            useEffect(() => {
+              if (!openExaminationId) return
+              const target = patientExaminations.find((exam) => exam.id === openExaminationId)
+              if (!target) return
+              setSelected(target)
+              setView('list')
+              onExaminationOpened?.()
+            }, [openExaminationId, onExaminationOpened, patientExaminations])
+            return (
+          `,
+          `function HistoryPage({ examinations: patientExaminations, diseaseRecords, openExaminationId, onExaminationOpened }: { examinations: Examination[]; diseaseRecords: Disease[]; openExaminationId?: string | null; onExaminationOpened?: () => void }) {
+            const [view, setView] = useState<HistoryView>('list')
+            const [selected, setSelected] = useState<Examination | null>(null)
+            const targetedExamination = openExaminationId ? patientExaminations.find((exam) => exam.id === openExaminationId) ?? null : null
+            const activeSelected = targetedExamination ?? selected
+            const closeSelected = () => {
+              setSelected(null)
+              if (targetedExamination) onExaminationOpened?.()
+            }
+            return (
+          `,
             'history deep link',
           )
 
@@ -82,35 +82,35 @@ jobs:
           )
 
           replaceOnce(
-`  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
-  const [addDiseaseId, setAddDiseaseId] = useState('')
+          `  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+            const [addDiseaseId, setAddDiseaseId] = useState('')
 
-  const load = useCallback(async () => {
-    setLoading(true); setError('')
-    try {
-`,
-`  const [requestId, setRequestId] = useState('')
-  const [addDiseaseId, setAddDiseaseId] = useState('')
+            const load = useCallback(async () => {
+              setLoading(true); setError('')
+              try {
+          `,
+          `  const [requestId, setRequestId] = useState('')
+            const [addDiseaseId, setAddDiseaseId] = useState('')
 
-  const load = useCallback(async () => {
-    try {
-`,
+            const load = useCallback(async () => {
+              try {
+          `,
             'staff review load',
           )
 
           replaceOnce(
-`  useEffect(() => { void load() }, [load])
+          `  useEffect(() => { void load() }, [load])
 
-  const original = detail?.currentFindings ?? []`,
-`  useEffect(() => { void load() }, [load])
+            const original = detail?.currentFindings ?? []`,
+          `  useEffect(() => { void load() }, [load])
 
-  const retryLoad = () => {
-    setLoading(true)
-    setError('')
-    void load()
-  }
+            const retryLoad = () => {
+              setLoading(true)
+              setError('')
+              void load()
+            }
 
-  const original = detail?.currentFindings ?? []`,
+            const original = detail?.currentFindings ?? []`,
             'staff retry',
           )
 
