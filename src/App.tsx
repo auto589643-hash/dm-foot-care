@@ -121,7 +121,10 @@ function formatSex(sex?: Sex): string {
 }
 
 function App() {
-  const runtimeState = useMemo(() => createRuntimeIntegrationState({ VITE_DMFC_API_BASE_URL: import.meta.env.VITE_DMFC_API_BASE_URL }), [])
+  const runtimeState = useMemo(() => createRuntimeIntegrationState({
+    VITE_DMFC_API_BASE_URL: import.meta.env.VITE_DMFC_API_BASE_URL,
+    VITE_DMFC_ALLOW_CROSS_ORIGIN_API: import.meta.env.VITE_DMFC_ALLOW_CROSS_ORIGIN_API,
+  }), [])
   const integrations = runtimeState.integrations!
   const [profile, setProfile] = useState<Profile | null>(null)
   const [page, setPage] = useState<Page>(profile?.role === 'admin' ? 'admin-home' : 'home')
@@ -329,7 +332,7 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
     try {
       onLogin(await authService.signInWithUsername(normalizedUsername, pin))
     } catch (caught) {
-      setError(caught instanceof Error && caught.message ? caught.message : 'เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลหรือลองใหม่อีกครั้ง')
+      setError(friendlyAuthError(caught, 'เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลหรือลองใหม่อีกครั้ง'))
     } finally {
       setSubmitting(false)
     }
@@ -378,7 +381,7 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
       setFieldErrors({})
       setRegistrationComplete(true)
     } catch (caught) {
-      setError(caught instanceof Error && caught.message ? caught.message : 'ลงทะเบียนไม่สำเร็จ กรุณาตรวจสอบข้อมูลแล้วลองใหม่อีกครั้ง')
+      setError(friendlyAuthError(caught, 'ลงทะเบียนไม่สำเร็จ กรุณาตรวจสอบข้อมูลแล้วลองใหม่อีกครั้ง'))
     } finally {
       setSubmitting(false)
     }
@@ -413,6 +416,14 @@ function LoginScreen({ onLogin, authService }: { onLogin: (profile: Profile) => 
       </section>
     </main>
   )
+}
+
+function friendlyAuthError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message.trim() : ''
+  if (/^(load failed|failed to fetch|networkerror)$/i.test(message)) {
+    return 'เชื่อมต่อระบบไม่ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง'
+  }
+  return message || fallback
 }
 
 function BrandMark() {

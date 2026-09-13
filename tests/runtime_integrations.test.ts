@@ -14,4 +14,31 @@ backend.setAccessToken('short-lived-token')
 assert.equal(backend.getAccessToken(), 'short-lived-token')
 
 assert.throws(() => createRuntimeIntegrationState({ VITE_DMFC_API_BASE_URL: 'http://api.example.test' }), /must use HTTPS/)
+
+const originalWindow = globalThis.window
+Object.defineProperty(globalThis, 'window', { configurable: true, value: { location: { origin: 'https://dm-foot-care-alias.example.test' } } })
+
+let requestedUrl = ''
+const sameOrigin = createRuntimeIntegrationState({ VITE_DMFC_API_BASE_URL: 'https://old-deployment.example.test/api' }, {
+  fetchImpl: async (input) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({ accessToken: 'token', profile: { id: 'u1' } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+})
+await sameOrigin.integrations?.auth.signInWithUsername('DM001', '1234')
+assert.equal(requestedUrl, 'https://dm-foot-care-alias.example.test/api/v1/auth/username/sign-in')
+
+const externalApi = createRuntimeIntegrationState({
+  VITE_DMFC_API_BASE_URL: 'https://api.example.test/',
+  VITE_DMFC_ALLOW_CROSS_ORIGIN_API: 'true',
+}, {
+  fetchImpl: async (input) => {
+    requestedUrl = String(input)
+    return new Response(JSON.stringify({ accessToken: 'token', profile: { id: 'u1' } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  },
+})
+await externalApi.integrations?.auth.signInWithUsername('DM001', '1234')
+assert.equal(requestedUrl, 'https://api.example.test/v1/auth/username/sign-in')
+
+Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow })
 console.log('Runtime integration tests passed')
