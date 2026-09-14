@@ -1,0 +1,46 @@
+/* Patient result readability tuning — prioritize older users and low-vision readability. */
+.recommendation-card .eyebrow {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.45;
+  letter-spacing: .03em;
+}
+
+.recommendation-card .section-heading h2 {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.35;
+}
+
+.recommendation-card li {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.75;
+  gap: 10px;
+}
+
+.recommendation-card li svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 5px;
+}
+
+@media (max-width: 760px) {
+  .recommendation-card {
+    padding: 22px;
+  }
+
+  .recommendation-card .eyebrow {
+    font-size: 16px;
+  }
+
+  .recommendation-card .section-heading h2 {
+    font-size: 24px;
+  }
+
+  .recommendation-card li {
+    font-size: 19px;
+    line-height: 1.8;
+  }
+}
