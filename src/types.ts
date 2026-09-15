@@ -177,6 +177,7 @@ export interface AdminDashboard {
   latestExam: { displayDate: string; username: string } | null
   followups: AdminDashboardFollowup[]
   recentExaminations: AdminDashboardRecentExam[]
+  allExaminations?: AdminDashboardRecentExam[]
 }
 
 export interface RegistrationInput {

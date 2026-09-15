@@ -56,16 +56,22 @@ async function loadDashboard(sourceRows) {
     else if (!latest || (daysSince != null && daysSince >= 7)) followups.push({ userId: user.user_id, username: user.username, name: user.display_name || user.username, issue: latest ? `ไม่ได้ตรวจ ${daysSince} วัน` : 'ยังไม่เคยตรวจ', time: thaiDate(lastAt), severe: false })
   }
   followups.sort((left, right) => Number(right.severe) - Number(left.severe) || left.username.localeCompare(right.username))
-  const recentExaminations = confirmed.slice(0, 5).map((exam) => {
+  const orderedConfirmed = [...confirmed].sort((left, right) => {
+    const rightTime = new Date(timestamp(right) || 0).getTime()
+    const leftTime = new Date(timestamp(left) || 0).getTime()
+    return rightTime - leftTime
+  })
+  const allExaminations = orderedConfirmed.map((exam) => {
     const user = userById.get(exam.user_id); const examFindings = findingsByExam.get(exam.id) || []; const severe = examFindings.some((finding) => finding.severity_label_snapshot === 'รุนแรง')
     return { examinationId: exam.id, userId: exam.user_id, username: user?.username || '—', name: user?.display_name || user?.username || 'ไม่พบชื่อผู้ใช้', displayDate: thaiDate(timestamp(exam)), findings: [...new Set(examFindings.map((finding) => finding.disease_name_snapshot))], status: severe ? 'danger' : examFindings.length ? 'attention' : 'success' }
   })
+  const recentExaminations = allExaminations.slice(0, 5)
   const usersWithHistory = new Set(confirmed.map((exam) => exam.user_id)).size
   const severeCount = followups.filter((item) => item.severe).length
   const completedLast7Days = days.reduce((sum, day) => sum + day.count, 0)
-  const latestExam = confirmed[0]
+  const latestExam = orderedConfirmed[0]
   const latestUser = latestExam ? userById.get(latestExam.user_id) : null
-  return { activeUsers: users.length, totalUsers: users.length, usersWithHistory, followupCount: followups.length, severeCount, completedLast7Days, averagePerDay: Number((completedLast7Days / 7).toFixed(1)), activityLast7Days: days, latestExam: latestExam ? { displayDate: thaiDate(timestamp(latestExam)), username: latestUser?.username || '—' } : null, followups: followups.slice(0, 8), recentExaminations }
+  return { activeUsers: users.length, totalUsers: users.length, usersWithHistory, followupCount: followups.length, severeCount, completedLast7Days, averagePerDay: Number((completedLast7Days / 7).toFixed(1)), activityLast7Days: days, latestExam: latestExam ? { displayDate: thaiDate(timestamp(latestExam)), username: latestUser?.username || '—' } : null, followups: followups.slice(0, 8), recentExaminations, allExaminations }
 }
 
 async function loadSharedAdminRows() {

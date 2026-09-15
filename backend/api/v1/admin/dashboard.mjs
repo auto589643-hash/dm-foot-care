@@ -96,7 +96,12 @@ export default async function handler(req, res) {
     }
     followups.sort((left, right) => Number(right.severe) - Number(left.severe) || left.username.localeCompare(right.username))
 
-    const recentExaminations = confirmed.slice(0, 5).map((exam) => {
+    const orderedConfirmed = [...confirmed].sort((left, right) => {
+      const rightTime = new Date(timestamp(right) || 0).getTime()
+      const leftTime = new Date(timestamp(left) || 0).getTime()
+      return rightTime - leftTime
+    })
+    const allExaminations = orderedConfirmed.map((exam) => {
       const user = userById.get(exam.user_id)
       const examFindings = findingsByExam.get(exam.id) || []
       const severe = examFindings.some((finding) => finding.severity_label_snapshot === 'รุนแรง')
@@ -110,11 +115,12 @@ export default async function handler(req, res) {
         status: severe ? 'danger' : examFindings.length ? 'attention' : 'success',
       }
     })
+    const recentExaminations = allExaminations.slice(0, 5)
 
     const usersWithHistory = new Set(confirmed.map((exam) => exam.user_id)).size
     const severeCount = followups.filter((item) => item.severe).length
     const completedLast7Days = days.reduce((sum, day) => sum + day.count, 0)
-    const latestExam = confirmed[0]
+    const latestExam = orderedConfirmed[0]
     const latestUser = latestExam ? userById.get(latestExam.user_id) : null
 
     return sendJson(res, 200, {
@@ -129,6 +135,7 @@ export default async function handler(req, res) {
       latestExam: latestExam ? { displayDate: thaiDate(timestamp(latestExam)), username: latestUser?.username || '—' } : null,
       followups: followups.slice(0, 8),
       recentExaminations,
+      allExaminations,
     })
   } catch (error) {
     console.error('admin dashboard failed', error)
