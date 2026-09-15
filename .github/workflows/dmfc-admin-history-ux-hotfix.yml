@@ -48,6 +48,7 @@ jobs:
       - name: Verify patch
         shell: bash
         run: |
+          npm run lint -- --fix
           npm run lint
           npm run build
           npm run test:ai
