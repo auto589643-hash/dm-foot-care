@@ -76,6 +76,6 @@ export function evaluateLiveFrameReadiness(metrics: LiveFrameMetrics): LiveFrame
   if (metrics.meanLuminance > 232) return { ready: false, message: 'แสงจ้าเกินไป' }
   if (metrics.luminanceVariance < 18 || metrics.edgeEnergy < 12) return { ready: false, message: 'ภาพยังไม่ชัดพอ' }
   if (metrics.centerDetailRatio < 0.045) return { ready: false, message: 'จัดเท้าให้อยู่ในกรอบ' }
-  if (metrics.motion !== undefined && metrics.motion > 9) return { ready: false, message: 'อยู่นิ่งสักครู่' }
+  if (metrics.motion !== undefined && metrics.motion > 14) return { ready: false, message: 'อยู่นิ่งสักครู่' }
   return { ready: true, message: 'จัดภาพพร้อมแล้ว' }
 }

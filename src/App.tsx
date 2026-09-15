@@ -916,6 +916,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const previousLuminanceRef = useRef<Float32Array | null>(null)
   const stableFramesRef = useRef(0)
+  const unstableFramesRef = useRef(0)
+  const readyLatchedRef = useRef(false)
   const captureInProgressRef = useRef(false)
   const captureTimerRef = useRef<number | null>(null)
   const advanceTimerRef = useRef<number | null>(null)
@@ -985,6 +987,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     captureTimerRef.current = null
     captureInProgressRef.current = false
     stableFramesRef.current = 0
+    unstableFramesRef.current = 0
+    readyLatchedRef.current = false
     previousLuminanceRef.current = null
     scanAnnouncementRef.current = false
     setPhotos((value) => ({ ...value, [position]: undefined }))
@@ -1016,6 +1020,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       advanceTimerRef.current = window.setTimeout(() => {
         captureInProgressRef.current = false
         stableFramesRef.current = 0
+        unstableFramesRef.current = 0
+        readyLatchedRef.current = false
         previousLuminanceRef.current = null
         setPhotos((value) => ({ ...value, [position]: undefined }))
         setQualityState('idle')
@@ -1064,6 +1070,8 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     } catch {
       captureInProgressRef.current = false
       stableFramesRef.current = 0
+      unstableFramesRef.current = 0
+      readyLatchedRef.current = false
       setScanProgress(0)
       setScanState('fallback')
       setScanMessage('บันทึกภาพไม่สำเร็จ กรุณาลองถ่ายอีกครั้ง')
@@ -1077,7 +1085,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     let active = true
     let animationFrame = 0
     let lastAnalysedAt = 0
-    const prepareUntil = performance.now() + 2500
+    const prepareUntil = performance.now() + 900
     const scanCanvas = scanCanvasRef.current ?? document.createElement('canvas')
     scanCanvasRef.current = scanCanvas
     scanCanvas.width = 96
@@ -1099,16 +1107,29 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       const frame = analyseLiveFrame(context.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data, scanCanvas.width, scanCanvas.height, previousLuminanceRef.current ?? undefined)
       previousLuminanceRef.current = frame.luminanceSamples
       const readiness = evaluateLiveFrameReadiness(frame)
-      stableFramesRef.current = readiness.ready ? stableFramesRef.current + 1 : 0
-      setScanProgress(Math.min(100, stableFramesRef.current * 25))
-      if (stableFramesRef.current < 4) {
-        if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
-        captureTimerRef.current = null
+      const targetStableFrames = 3
+      if (readiness.ready) {
+        stableFramesRef.current = Math.min(targetStableFrames, stableFramesRef.current + 1)
+        unstableFramesRef.current = 0
+      } else if (!readyLatchedRef.current) {
+        unstableFramesRef.current += 1
+        // A single noisy frame is common with handheld phones. Keep the
+        // acquired progress once, then decay gradually if the frame stays bad.
+        if (unstableFramesRef.current > 1) {
+          stableFramesRef.current = Math.max(0, stableFramesRef.current - 1)
+        }
+      }
+      setScanProgress(Math.min(100, Math.round((stableFramesRef.current / targetStableFrames) * 100)))
+      if (!readyLatchedRef.current && stableFramesRef.current < targetStableFrames) {
         scanAnnouncementRef.current = false
         setScanState(readiness.ready ? 'hold-still' : 'searching')
-        setScanMessage(readiness.ready ? 'อยู่นิ่งอีกสักครู่' : readiness.message)
+        setScanMessage(readiness.ready ? 'จัดภาพได้แล้ว อยู่นิ่งอีกสักครู่' : readiness.message)
         return
       }
+      // Once Ready is reached, latch it until capture starts. A noisy frame after
+      // Ready must not cancel the automatic shutter.
+      readyLatchedRef.current = true
+      setScanProgress(100)
       setScanState('countdown')
       setScanMessage('พร้อมแล้ว กำลังบันทึกอัตโนมัติ')
       if (audioEnabled && !scanAnnouncementRef.current && typeof window.speechSynthesis !== 'undefined') {
@@ -1116,12 +1137,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
         window.speechSynthesis.cancel()
         window.speechSynthesis.speak(new SpeechSynthesisUtterance('อยู่นิ่ง ระบบกำลังบันทึกภาพ'))
       }
-      if (!captureTimerRef.current) {
-        captureTimerRef.current = window.setTimeout(() => {
-          captureTimerRef.current = null
-          if (stableFramesRef.current >= 4 && !captureInProgressRef.current) void capturePhoto()
-        }, 650)
-      }
+      if (!captureInProgressRef.current) void capturePhoto()
     }
 
     const schedule = () => {

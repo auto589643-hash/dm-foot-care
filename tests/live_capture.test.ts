@@ -29,6 +29,15 @@ assert.equal(evaluateLiveFrameReadiness(second).ready, true)
 const dark = analyseLiveFrame(frame(width, height, () => 15), width, height)
 assert.match(evaluateLiveFrameReadiness(dark).message, /แสงน้อย/)
 
+
+const moderateMovement = frame(width, height, (x, y) => {
+  const insideGuide = x > 7 && x < 26 && y > 4 && y < 29
+  return insideGuide ? ((x + y) % 2 === 0 ? 192 : 96) : 120
+})
+const moderate = analyseLiveFrame(moderateMovement, width, height, first.luminanceSamples)
+assert.ok(moderate.motion !== undefined && moderate.motion > 9 && moderate.motion <= 14)
+assert.equal(evaluateLiveFrameReadiness(moderate).ready, true)
+
 const moving = analyseLiveFrame(frame(width, height, (x, y) => ((x + y) % 2 === 0 ? 240 : 20)), width, height, first.luminanceSamples)
 assert.match(evaluateLiveFrameReadiness(moving).message, /อยู่นิ่ง/)
 
