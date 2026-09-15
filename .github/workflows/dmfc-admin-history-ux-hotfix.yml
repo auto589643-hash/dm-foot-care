@@ -43,7 +43,10 @@ jobs:
           echo "BASELINE_REVISION_CONTRACT_STATUS=$status" >> "$GITHUB_ENV"
 
       - name: Apply UX patch
-        run: python .github/scripts/dmfc-admin-history-ux-hotfix.py
+        shell: bash
+        run: |
+          sed -i 's/function FollowupRow)/function AdminStat)/' .github/scripts/dmfc-admin-history-ux-hotfix.py
+          python .github/scripts/dmfc-admin-history-ux-hotfix.py
 
       - name: Verify patch
         shell: bash
