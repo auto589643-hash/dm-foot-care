@@ -1,0 +1,133 @@
+name: DMFC Smart Capture Hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/dmfc-smart-capture-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-verify-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply Smart Capture hotfix
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          app_path = Path('src/App.tsx')
+          app = app_path.read_text()
+
+          app = replace_once(
+              app,
+              """  const stableFramesRef = useRef(0)\n  const captureInProgressRef = useRef(false)""",
+              """  const stableFramesRef = useRef(0)\n  const unstableFramesRef = useRef(0)\n  const readyLatchedRef = useRef(false)\n  const captureInProgressRef = useRef(false)""",
+              'capture refs',
+          )
+
+          app = replace_once(
+              app,
+              """    stableFramesRef.current = 0\n    previousLuminanceRef.current = null\n    scanAnnouncementRef.current = false""",
+              """    stableFramesRef.current = 0\n    unstableFramesRef.current = 0\n    readyLatchedRef.current = false\n    previousLuminanceRef.current = null\n    scanAnnouncementRef.current = false""",
+              'clear-photo reset',
+          )
+
+          app = replace_once(
+              app,
+              """        captureInProgressRef.current = false\n        stableFramesRef.current = 0\n        previousLuminanceRef.current = null""",
+              """        captureInProgressRef.current = false\n        stableFramesRef.current = 0\n        unstableFramesRef.current = 0\n        readyLatchedRef.current = false\n        previousLuminanceRef.current = null""",
+              'quality-block reset',
+          )
+
+          app = replace_once(
+              app,
+              """      captureInProgressRef.current = false\n      stableFramesRef.current = 0\n      setScanProgress(0)""",
+              """      captureInProgressRef.current = false\n      stableFramesRef.current = 0\n      unstableFramesRef.current = 0\n      readyLatchedRef.current = false\n      setScanProgress(0)""",
+              'capture-error reset',
+          )
+
+          app = replace_once(
+              app,
+              "const prepareUntil = performance.now() + 2500",
+              "const prepareUntil = performance.now() + 900",
+              'camera warm-up',
+          )
+
+          old_state_machine = """      const readiness = evaluateLiveFrameReadiness(frame)\n      stableFramesRef.current = readiness.ready ? stableFramesRef.current + 1 : 0\n      setScanProgress(Math.min(100, stableFramesRef.current * 25))\n      if (stableFramesRef.current < 4) {\n        if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)\n        captureTimerRef.current = null\n        scanAnnouncementRef.current = false\n        setScanState(readiness.ready ? 'hold-still' : 'searching')\n        setScanMessage(readiness.ready ? 'อยู่นิ่งอีกสักครู่' : readiness.message)\n        return\n      }\n      setScanState('countdown')\n      setScanMessage('พร้อมแล้ว กำลังบันทึกอัตโนมัติ')\n      if (audioEnabled && !scanAnnouncementRef.current && typeof window.speechSynthesis !== 'undefined') {\n        scanAnnouncementRef.current = true\n        window.speechSynthesis.cancel()\n        window.speechSynthesis.speak(new SpeechSynthesisUtterance('อยู่นิ่ง ระบบกำลังบันทึกภาพ'))\n      }\n      if (!captureTimerRef.current) {\n        captureTimerRef.current = window.setTimeout(() => {\n          captureTimerRef.current = null\n          if (stableFramesRef.current >= 4 && !captureInProgressRef.current) void capturePhoto()\n        }, 650)\n      }"""
+
+          new_state_machine = """      const readiness = evaluateLiveFrameReadiness(frame)\n      const targetStableFrames = 3\n      if (readiness.ready) {\n        stableFramesRef.current = Math.min(targetStableFrames, stableFramesRef.current + 1)\n        unstableFramesRef.current = 0\n      } else if (!readyLatchedRef.current) {\n        unstableFramesRef.current += 1\n        // A single noisy frame is common with handheld phones. Keep the\n        // acquired progress once, then decay gradually if the frame stays bad.\n        if (unstableFramesRef.current > 1) {\n          stableFramesRef.current = Math.max(0, stableFramesRef.current - 1)\n        }\n      }\n      setScanProgress(Math.min(100, Math.round((stableFramesRef.current / targetStableFrames) * 100)))\n      if (!readyLatchedRef.current && stableFramesRef.current < targetStableFrames) {\n        scanAnnouncementRef.current = false\n        setScanState(readiness.ready ? 'hold-still' : 'searching')\n        setScanMessage(readiness.ready ? 'จัดภาพได้แล้ว อยู่นิ่งอีกสักครู่' : readiness.message)\n        return\n      }\n      // Once Ready is reached, latch it until capture starts. A noisy frame after\n      // Ready must not cancel the automatic shutter.\n      readyLatchedRef.current = true\n      setScanProgress(100)\n      setScanState('countdown')\n      setScanMessage('พร้อมแล้ว กำลังบันทึกอัตโนมัติ')\n      if (audioEnabled && !scanAnnouncementRef.current && typeof window.speechSynthesis !== 'undefined') {\n        scanAnnouncementRef.current = true\n        window.speechSynthesis.cancel()\n        window.speechSynthesis.speak(new SpeechSynthesisUtterance('อยู่นิ่ง ระบบกำลังบันทึกภาพ'))\n      }\n      if (!captureInProgressRef.current) void capturePhoto()"""
+
+          app = replace_once(app, old_state_machine, new_state_machine, 'capture state machine')
+          app_path.write_text(app)
+
+          live_path = Path('src/services/liveCapture.ts')
+          live = live_path.read_text()
+          live = replace_once(
+              live,
+              "metrics.motion !== undefined && metrics.motion > 9",
+              "metrics.motion !== undefined && metrics.motion > 14",
+              'motion threshold',
+          )
+          live_path.write_text(live)
+
+          live_test_path = Path('tests/live_capture.test.ts')
+          live_test = live_test_path.read_text()
+          insertion = """\nconst moderateMovement = frame(width, height, (x, y) => {\n  const insideGuide = x > 7 && x < 26 && y > 4 && y < 29\n  return insideGuide ? ((x + y) % 2 === 0 ? 192 : 96) : 120\n})\nconst moderate = analyseLiveFrame(moderateMovement, width, height, first.luminanceSamples)\nassert.ok(moderate.motion !== undefined && moderate.motion > 9 && moderate.motion <= 14)\nassert.equal(evaluateLiveFrameReadiness(moderate).ready, true)\n\n"""
+          live_test = replace_once(
+              live_test,
+              "const moving = analyseLiveFrame(frame(width, height, (x, y) => ((x + y) % 2 === 0 ? 240 : 20)), width, height, first.luminanceSamples)\n",
+              insertion + "const moving = analyseLiveFrame(frame(width, height, (x, y) => ((x + y) % 2 === 0 ? 240 : 20)), width, height, first.luminanceSamples)\n",
+              'moderate motion regression test',
+          )
+          live_test_path.write_text(live_test)
+
+          contract_path = Path('tests/feature_update_contract.test.ts')
+          contract = contract_path.read_text()
+          contract = replace_once(
+              contract,
+              "assert.match(app, /กำลังบันทึกอัตโนมัติ/)\n",
+              """assert.match(app, /กำลังบันทึกอัตโนมัติ/)\nassert.match(app, /const targetStableFrames = 3/)\nassert.match(app, /unstableFramesRef\\.current > 1/)\nassert.match(app, /readyLatchedRef\\.current = true/)\nassert.match(app, /performance\\.now\\(\\) \\+ 900/)\nassert.match(app, /if \\(!captureInProgressRef\\.current\\) void capturePhoto\\(\\)/)\nassert.doesNotMatch(app, /stableFramesRef\\.current >= 4/)\n""",
+              'capture contract assertions',
+          )
+          contract_path.write_text(contract)
+          PY
+
+      - name: Verify hotfix
+        run: npm run verify
+
+      - name: Commit verified hotfix and remove one-shot workflow
+        shell: bash
+        run: |
+          rm .github/workflows/dmfc-smart-capture-hotfix.yml
+          git config user.name "Emily DMFC Automation"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/services/liveCapture.ts tests/live_capture.test.ts tests/feature_update_contract.test.ts .github/workflows/dmfc-smart-capture-hotfix.yml
+          git diff --cached --check
+          git commit -m "fix(dmfc): stabilize smart capture auto-capture"
+          git push origin HEAD:main
