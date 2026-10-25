@@ -6,6 +6,7 @@ import './impeccable.css'
 import './legacy65925.css'
 import './accessibility-overrides.css'
 import './patient-accessibility-tuning.css'
+import './capture-minimal.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
