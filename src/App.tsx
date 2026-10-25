@@ -878,7 +878,6 @@ function ExamIntro({ hasDraft, onResume, onStart, onBack }: { hasDraft: boolean;
 type CameraState = 'checking' | 'ready' | 'denied' | 'unsupported'
 type QualityState = 'idle' | 'checking' | 'ready' | 'warning' | 'blocked'
 type QualityResult = ImageQualityResult
-type ScanState = 'searching' | 'hold-still' | 'countdown' | 'capturing' | 'fallback'
 
 async function inspectImageQuality(dataUrl: string): Promise<QualityResult> {
   return new Promise((resolve) => {
@@ -1131,7 +1130,7 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       </div>
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
         {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
-        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className={`camera-instruction scan-${scanState}`}><strong>{current.label}</strong><span>{current.hint}</span><span>{scanMessage}</span></div></> : null}
+        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><strong>{current.label}</strong><span>{current.hint}</span><span>{scanMessage}</span></div></> : null}
         {!photo ? (
           <div className="live-quality-panel" role="group" aria-label="ข้อมูลคุณภาพภาพขณะเปิดกล้อง">
             <strong>คุณภาพภาพแบบเรียลไทม์</strong>
