@@ -915,22 +915,20 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const cameraRequestRef = useRef(0)
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const previousLuminanceRef = useRef<Float32Array | null>(null)
-  const stableFramesRef = useRef(0)
-  const unstableFramesRef = useRef(0)
-  const readyLatchedRef = useRef(false)
   const captureInProgressRef = useRef(false)
-  const captureTimerRef = useRef<number | null>(null)
-  const advanceTimerRef = useRef<number | null>(null)
-  const scanAnnouncementRef = useRef(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [captureMode, setCaptureMode] = useState<'self' | 'assisted'>('self')
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>('checking')
   const [qualityState, setQualityState] = useState<QualityState>('idle')
   const [qualityResult, setQualityResult] = useState<QualityResult | null>(null)
-  const [scanState, setScanState] = useState<ScanState>('searching')
   const [scanMessage, setScanMessage] = useState('กำลังเปิดกล้อง')
-  const [scanProgress, setScanProgress] = useState(0)
+  const [fileError, setFileError] = useState('')
+  const [liveQuality, setLiveQuality] = useState<{
+    light: { ok: boolean; text: string }
+    clarity: { ok: boolean; text: string }
+    steadiness: { ok: boolean; text: string }
+  } | null>(null)
 
   const startCamera = useCallback(async () => {
     const requestId = cameraRequestRef.current + 1
@@ -969,8 +967,6 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     return () => {
       window.clearTimeout(timer)
       cameraRequestRef.current += 1
-      if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
-      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
       streamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [startCamera, position])
@@ -980,105 +976,82 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   }, [cameraState, photo])
 
   const clearPhoto = () => {
-    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
-    if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
-    advanceTimerRef.current = null
-    captureTimerRef.current = null
     captureInProgressRef.current = false
-    stableFramesRef.current = 0
-    unstableFramesRef.current = 0
-    readyLatchedRef.current = false
     previousLuminanceRef.current = null
-    scanAnnouncementRef.current = false
     setPhotos((value) => ({ ...value, [position]: undefined }))
     setQualityState('idle')
     setQualityResult(null)
-    setScanState('searching')
-    setScanMessage('กำลังมองหาตำแหน่งเท้าในกรอบ')
-    setScanProgress(0)
-    window.setTimeout(() => void startCamera(), 0)
+    setLiveQuality(null)
+    setScanMessage('จัดเท้าให้อยู่ในกรอบ แล้วกดถ่ายเมื่อพร้อม')
+    setFileError('')
+    void startCamera()
   }
 
   const switchCamera = () => {
     setFacingMode((currentMode) => currentMode === 'environment' ? 'user' : 'environment')
   }
 
-  const setPhotoAndInspect = useCallback(async (dataUrl: string, nextQualityResult?: QualityResult) => {
+  const setPhotoAndInspect = useCallback(async (dataUrl: string) => {
+    setFileError('')
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
     setPhotos((value) => ({ ...value, [position]: dataUrl }))
     setQualityState('checking')
-    const result = nextQualityResult ?? await inspectImageQuality(dataUrl)
+    const result = await inspectImageQuality(dataUrl)
     setQualityResult(result)
     setQualityState(result.gate === 'ready' ? 'ready' : result.gate === 'warning' ? 'warning' : 'blocked')
+    setScanMessage(result.gate === 'block'
+      ? 'ภาพนี้ยังใช้ไม่ได้ กรุณาถ่ายหรืออัปโหลดใหม่'
+      : result.gate === 'warning'
+        ? 'ภาพอาจใช้ได้ กรุณาตรวจทานก่อนยืนยัน'
+        : 'บันทึกภาพแล้ว กรุณาตรวจทานก่อนยืนยัน')
     if (audioEnabled && typeof window.speechSynthesis !== 'undefined') {
       window.speechSynthesis.cancel()
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(result.gate === 'ready' ? 'พร้อมถ่ายภาพต่อไป' : result.gate === 'warning' ? 'ภาพอาจใช้ได้ แนะนำให้ตรวจแสงหรือความชัดอีกครั้ง' : 'กรุณาถ่ายภาพใหม่'))
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(result.gate === 'ready' ? 'บันทึกภาพแล้ว กรุณาตรวจทาน' : result.gate === 'warning' ? 'ภาพอาจใช้ได้ กรุณาตรวจทาน' : 'ภาพไม่เหมาะสม กรุณาถ่ายใหม่'))
     }
-    if (result.gate === 'block') {
-      setScanState('fallback')
-      setScanMessage('ภาพนี้ยังใช้ไม่ได้ ระบบกำลังสแกนใหม่')
-      advanceTimerRef.current = window.setTimeout(() => {
-        captureInProgressRef.current = false
-        stableFramesRef.current = 0
-        unstableFramesRef.current = 0
-        readyLatchedRef.current = false
-        previousLuminanceRef.current = null
-        setPhotos((value) => ({ ...value, [position]: undefined }))
-        setQualityState('idle')
-        setQualityResult(null)
-        setScanState('searching')
-        setScanProgress(0)
-      }, 1200)
-      return
-    }
-    setScanState('capturing')
-    if (result.gate === 'warning') {
-      captureInProgressRef.current = false
-      setScanMessage('บันทึกภาพแล้ว กรุณาตรวจทานก่อนใช้ต่อ')
-      return
-    }
-    setScanMessage('บันทึกภาพแล้ว')
-    advanceTimerRef.current = window.setTimeout(() => onNext(), 950)
-  }, [audioEnabled, onNext, position, setPhotos])
+  }, [audioEnabled, position, setPhotos])
 
   const readPhoto = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => { void setPhotoAndInspect(String(reader.result)) }
-    reader.readAsDataURL(file)
     event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setFileError('กรุณาเลือกไฟล์รูปภาพเท่านั้น')
+      return
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setFileError('รูปภาพใหญ่เกิน 15 MB กรุณาเลือกภาพที่เล็กลง')
+      return
+    }
+    setFileError('')
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') void setPhotoAndInspect(reader.result)
+      else setFileError('อ่านรูปภาพไม่สำเร็จ กรุณาเลือกใหม่')
+    }
+    reader.onerror = () => setFileError('อ่านรูปภาพไม่สำเร็จ กรุณาเลือกใหม่')
+    reader.readAsDataURL(file)
   }
 
   const capturePhoto = useCallback(async () => {
     if (captureInProgressRef.current) return
-    if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
-    captureTimerRef.current = null
     const video = videoRef.current
-    if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
-      captureInProgressRef.current = false
-      return
-    }
+    if (!video || cameraState !== 'ready' || video.videoWidth === 0) return
     captureInProgressRef.current = true
-    setScanState('capturing')
     setScanMessage('กำลังบันทึกภาพ')
     const canvas = document.createElement('canvas')
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     try {
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Camera canvas unavailable')
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-    // A camera frame is already a rendered copy, so high-quality JPEG keeps
-    // clinical detail while avoiding multi-megabyte PNG uploads on mobile.
-    await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Camera canvas unavailable')
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      await setPhotoAndInspect(canvas.toDataURL('image/jpeg', 0.9))
     } catch {
+      setFileError('บันทึกภาพไม่สำเร็จ กรุณากดถ่ายใหม่หรืออัปโหลดรูป')
+      setScanMessage('บันทึกภาพไม่สำเร็จ')
+    } finally {
       captureInProgressRef.current = false
-      stableFramesRef.current = 0
-      unstableFramesRef.current = 0
-      readyLatchedRef.current = false
-      setScanProgress(0)
-      setScanState('fallback')
-      setScanMessage('บันทึกภาพไม่สำเร็จ กรุณาลองถ่ายอีกครั้ง')
     }
   }, [cameraState, setPhotoAndInspect])
 
@@ -1088,67 +1061,49 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     if (!video) return
     let active = true
     let animationFrame = 0
+    let videoFrameHandle = 0
     let lastAnalysedAt = 0
-    const prepareUntil = performance.now() + 900
     const scanCanvas = scanCanvasRef.current ?? document.createElement('canvas')
     scanCanvasRef.current = scanCanvas
     scanCanvas.width = 96
     scanCanvas.height = 96
     const context = scanCanvas.getContext('2d', { willReadFrequently: true })
     if (!context) {
-      setScanState('fallback')
-      setScanMessage('เปิดโหมดสแกนอัตโนมัติไม่ได้ ใช้ปุ่มถ่ายเองแทนได้')
+      setScanMessage('ตรวจคุณภาพภาพสดไม่ได้ แต่ยังสามารถกดถ่ายเองได้')
       return
     }
-
     const analyse = () => {
-      if (!active || captureInProgressRef.current || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) return
+      if (!active || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) return
       const now = performance.now()
-      if (now < prepareUntil) return
-      if (now - lastAnalysedAt < 180) return
+      if (now - lastAnalysedAt < 200) return
       lastAnalysedAt = now
-      context.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height)
-      const frame = analyseLiveFrame(context.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data, scanCanvas.width, scanCanvas.height, previousLuminanceRef.current ?? undefined)
-      previousLuminanceRef.current = frame.luminanceSamples
-      const readiness = evaluateLiveFrameReadiness(frame)
-      const targetStableFrames = 3
-      if (readiness.ready) {
-        stableFramesRef.current = Math.min(targetStableFrames, stableFramesRef.current + 1)
-        unstableFramesRef.current = 0
-      } else if (!readyLatchedRef.current) {
-        unstableFramesRef.current += 1
-        // A single noisy frame is common with handheld phones. Keep the
-        // acquired progress once, then decay gradually if the frame stays bad.
-        if (unstableFramesRef.current > 1) {
-          stableFramesRef.current = Math.max(0, stableFramesRef.current - 1)
-        }
+      try {
+        context.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height)
+        const frame = analyseLiveFrame(context.getImageData(0, 0, scanCanvas.width, scanCanvas.height).data, scanCanvas.width, scanCanvas.height, previousLuminanceRef.current ?? undefined)
+        previousLuminanceRef.current = frame.luminanceSamples
+        const readiness = evaluateLiveFrameReadiness(frame)
+        const lightOk = frame.meanLuminance >= 35 && frame.meanLuminance <= 232
+        const clarityOk = frame.luminanceVariance >= 18 && frame.edgeEnergy >= 12
+        const steadyOk = frame.motion === undefined || frame.motion <= 14
+        setLiveQuality({
+          light: { ok: lightOk, text: frame.meanLuminance < 35 ? 'แสงน้อย' : frame.meanLuminance > 232 ? 'แสงจ้า' : 'เหมาะสม' },
+          clarity: { ok: clarityOk, text: clarityOk ? 'ชัดเบื้องต้น' : 'อาจไม่ชัด' },
+          steadiness: { ok: steadyOk, text: steadyOk ? 'นิ่งพอ' : 'ขยับอยู่' },
+        })
+        setScanMessage(readiness.ready ? 'ภาพดูพร้อมแล้ว กดถ่ายได้เลย' : readiness.message + ' (ยังกดถ่ายได้)')
+      } catch {
+        setLiveQuality(null)
+        setScanMessage('ตรวจภาพสดไม่ได้ แต่ยังกดถ่ายเองได้')
       }
-      setScanProgress(Math.min(100, Math.round((stableFramesRef.current / targetStableFrames) * 100)))
-      if (!readyLatchedRef.current && stableFramesRef.current < targetStableFrames) {
-        scanAnnouncementRef.current = false
-        setScanState(readiness.ready ? 'hold-still' : 'searching')
-        setScanMessage(readiness.ready ? 'จัดภาพได้แล้ว อยู่นิ่งอีกสักครู่' : readiness.message)
-        return
-      }
-      // Once Ready is reached, latch it until capture starts. A noisy frame after
-      // Ready must not cancel the automatic shutter.
-      readyLatchedRef.current = true
-      setScanProgress(100)
-      setScanState('countdown')
-      setScanMessage('พร้อมแล้ว กำลังบันทึกอัตโนมัติ')
-      if (audioEnabled && !scanAnnouncementRef.current && typeof window.speechSynthesis !== 'undefined') {
-        scanAnnouncementRef.current = true
-        window.speechSynthesis.cancel()
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance('อยู่นิ่ง ระบบกำลังบันทึกภาพ'))
-      }
-      if (!captureInProgressRef.current) void capturePhoto()
     }
-
+    const videoWithCallbacks = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (callback: () => void) => number
+      cancelVideoFrameCallback?: (handle: number) => void
+    }
     const schedule = () => {
       if (!active) return
-      const modernVideo = video as HTMLVideoElement & { requestVideoFrameCallback?: (callback: () => void) => number }
-      if (typeof modernVideo.requestVideoFrameCallback === 'function') {
-        modernVideo.requestVideoFrameCallback(() => { analyse(); schedule() })
+      if (typeof videoWithCallbacks.requestVideoFrameCallback === 'function') {
+        videoFrameHandle = videoWithCallbacks.requestVideoFrameCallback(() => { analyse(); schedule() })
       } else {
         animationFrame = window.requestAnimationFrame(() => { analyse(); schedule() })
       }
@@ -1156,12 +1111,10 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     schedule()
     return () => {
       active = false
-      if (captureTimerRef.current) window.clearTimeout(captureTimerRef.current)
-      captureTimerRef.current = null
+      if (videoFrameHandle && typeof videoWithCallbacks.cancelVideoFrameCallback === 'function') videoWithCallbacks.cancelVideoFrameCallback(videoFrameHandle)
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
     }
-  }, [audioEnabled, cameraState, capturePhoto, photo])
-
+  }, [cameraState, photo])
 
   const permissionMessage = cameraState === 'denied' ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้เว็บไซต์เข้าถึงกล้อง แล้วลองอีกครั้ง' : 'อุปกรณ์นี้ไม่รองรับกล้องบนเว็บ สามารถเลือกภาพจากเครื่องแทนได้'
   const qualityIsBlocked = qualityResult?.gate === 'block'
@@ -1179,28 +1132,44 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
         {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
         {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className={`camera-instruction scan-${scanState}`}><strong>{current.label}</strong><span>{current.hint}</span><span>{scanMessage}</span></div></> : null}
-        {!photo ? (<div className="scan-progress scan-progress-overlay" role="progressbar" aria-label="ความคืบหน้าการจัดภาพ ไม่ใช่ความมั่นใจ AI" aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanProgress}><ScanLine size={25} /><strong>{scanState === 'countdown' ? 'พร้อมบันทึก' : scanState === 'hold-still' ? 'กำลังตรวจความนิ่ง' : scanState === 'capturing' ? 'กำลังบันทึก' : 'กำลังสแกน'}</strong><span>{scanProgress}%</span></div>) : null}
+        {!photo ? (
+          <div className="live-quality-panel" role="group" aria-label="ข้อมูลคุณภาพภาพขณะเปิดกล้อง">
+            <strong>คุณภาพภาพแบบเรียลไทม์</strong>
+            <div className="live-quality-grid" aria-live="off">
+              {([
+                { label: 'แสง', signal: liveQuality?.light },
+                { label: 'ความชัด', signal: liveQuality?.clarity },
+                { label: 'ความนิ่ง', signal: liveQuality?.steadiness },
+              ]).map((item) => (
+                <div className={'live-quality-item ' + (item.signal ? (item.signal.ok ? 'good' : 'warn') : 'checking')} key={item.label}>
+                  <span>{item.label}</span><strong>{item.signal?.text ?? 'กำลังตรวจ'}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <span className="viewfinder-corner vc-1" /><span className="viewfinder-corner vc-2" /><span className="viewfinder-corner vc-3" /><span className="viewfinder-corner vc-4" />
       </div>
       <div className="capture-controls">
         {!photo ? (
           <>
-            <p><ScanLine size={18} />{captureMode === 'self' ? `${current.hint} ระบบจะบันทึกภาพเองเมื่อพร้อม` : `ให้ผู้ช่วยถือโทรศัพท์ แล้ว${current.hint} ระบบจะบันทึกเอง`}</p>
-            <p className="capture-fallback-note"><Info size={17} />ไม่ต้องกดชัตเตอร์ ระบบจะตรวจแสง ความชัด องค์ประกอบในกรอบ และความนิ่งต่อเนื่องก่อนบันทึกภาพ</p>
+            <p><ScanLine size={18} />{captureMode === 'self' ? current.hint + ' แล้วกดถ่ายภาพด้วยตนเอง' : 'ให้ผู้ช่วยถือโทรศัพท์ จัดภาพตามกรอบ แล้วกดถ่าย'}</p>
+            <p className="capture-fallback-note"><Info size={17} />สถานะภาพสดใช้ช่วยจัดแสงและความนิ่งเท่านั้น ไม่ใช่ผลตรวจโรค และไม่ล็อกปุ่มถ่าย</p>
             {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
             <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
-            <div className="camera-actions">
+            <div className="camera-actions manual-camera-actions">
               <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
-              <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>กลับกล้อง</span></button>
+              <button className="camera-shutter camera-action-primary" type="button" disabled={cameraState !== 'ready'} onClick={() => void capturePhoto()} aria-label="กดถ่ายภาพด้วยตนเอง"><Camera size={28} /><span>กดถ่ายภาพ</span></button>
+              <button className="camera-action-button" type="button" disabled={cameraState !== 'ready'} onClick={switchCamera}><SwitchCamera size={22} /><span>สลับกล้อง</span></button>
             </div>
-            <button className="manual-capture-fallback" type="button" disabled={cameraState !== 'ready' || scanState === 'capturing'} onClick={() => void capturePhoto()}><Camera size={16} />ถ่ายเองหากระบบสแกนไม่สำเร็จ</button>
+            {fileError ? <p className="capture-file-error" role="alert">{fileError}</p> : null}
           </>
         ) : (
           <div className={qualityIsBlocked ? 'quality-result failed' : qualityHasWarning ? 'quality-result warning' : 'quality-result'}>
             <div className="quality-heading"><span>{qualityState === 'ready' ? <CircleCheck size={21} /> : qualityState === 'blocked' ? <AlertTriangle size={21} /> : qualityState === 'warning' ? <Info size={21} /> : <Clock3 size={21} />}</span><div><strong>{qualityState === 'ready' ? 'ภาพนี้อยู่ในเกณฑ์เบื้องต้น' : qualityState === 'blocked' ? 'กรุณาถ่ายภาพใหม่' : qualityState === 'warning' ? 'ภาพนี้ยังใช้ต่อได้' : 'กำลังตรวจสอบภาพ…'}</strong><small>{qualityResult?.message ?? 'ระบบกำลังเช็กแสง ความละเอียด และความชัด'}</small></div></div>
             {qualityResult ? <div className="quality-checks">{qualityResult.checks.map((check) => <span className={check.passed ? '' : 'failed'} key={check.label}>{check.passed ? <Check size={15} /> : <X size={15} />}{check.label}</span>)}</div> : null}
             {qualityHasWarning ? <p className="quality-override-note">ระบบจะติดธงคุณภาพภาพนี้ไว้เพื่อให้ผู้ดูแลตรวจทานเพิ่ม คุณสามารถถ่ายใหม่ได้หากต้องการ</p> : null}
-            <button className="button button-primary button-large" type="button" disabled={qualityState === 'checking' || qualityIsBlocked} onClick={onNext}>{step === 3 ? 'ตรวจดูภาพทั้งหมด' : 'ใช้ภาพนี้และถ่ายภาพต่อไป'}<ArrowRight size={20} /></button>
+            <button className="button button-primary button-large" type="button" disabled={qualityState === 'checking' || qualityIsBlocked} onClick={onNext}>{step === 3 ? 'ยืนยันและตรวจดูภาพทั้งหมด' : 'ใช้ภาพนี้และไปภาพถัดไป'}<ArrowRight size={20} /></button>
             <button className="button button-ghost" type="button" onClick={clearPhoto}><RotateCcw size={18} />ถ่ายใหม่</button>
           </div>
         )}
