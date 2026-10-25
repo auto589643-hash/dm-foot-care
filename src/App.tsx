@@ -1005,7 +1005,12 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     streamRef.current = null
     setPhotos((value) => ({ ...value, [position]: dataUrl }))
     setQualityState('checking')
-    const result = await inspectImageQuality(dataUrl)
+    let result: QualityResult
+    try {
+      result = await inspectImageQuality(dataUrl)
+    } catch {
+      result = { passed: false, gate: 'block', message: 'ตรวจรูปภาพไม่สำเร็จ กรุณาถ่ายหรืออัปโหลดใหม่', checks: [{ label: 'ตรวจไฟล์ภาพ', passed: false, level: 'block' }] }
+    }
     setQualityResult(result)
     setQualityState(result.gate === 'ready' ? 'ready' : result.gate === 'warning' ? 'warning' : 'blocked')
     setScanMessage(result.gate === 'block'
