@@ -1,0 +1,178 @@
+/* DMFC capture-only mobile UX — full browser viewport and uncluttered controls.
+   Applies strictly to the four-view camera flow, not other patient/admin pages. */
+.capture-page {
+  position: fixed !important;
+  inset: 0;
+  z-index: 110;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0 !important;
+  max-height: 100dvh;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0b1725;
+  color: #fff;
+}
+.capture-page .capture-header {
+  flex: 0 0 54px;
+  min-height: 54px;
+  padding: 4px 13px;
+  grid-template-columns: 60px minmax(0,1fr) 74px;
+  background: #0b1725;
+}
+.capture-page .capture-header .icon-button { width: 44px; height: 44px; }
+.capture-page .capture-header strong { font-size: 16px; letter-spacing: -.01em; line-height: 1.3; }
+.capture-page .capture-header span { color: #a9b8c6; font-size: 12px; }
+.capture-page .capture-audio-toggle {
+  min-height: 44px; border: 0; padding: 5px;
+  background: none; color: #bfcdd9; font-size: 12px; font-weight: 600;
+}
+.capture-page .capture-audio-toggle[aria-pressed="true"] { color: #d7edff; }
+.capture-page .step-segments {
+  flex: 0 0 11px;
+  margin: 0 auto; width: min(100%, 700px);
+  padding: 0 16px 6px;
+  gap: 5px;
+}
+.capture-page .step-segments span { height: 3px; background: #34465a; }
+.capture-page .step-segments span.complete { background: #85a9d7; }
+.capture-page .camera-viewport {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  height: auto !important;
+  margin: 0 auto;
+  width: min(100%, 760px);
+  overflow: hidden;
+  border-radius: 0;
+  background-color: #172836;
+  box-shadow: none;
+}
+.capture-page .camera-viewport::after { box-shadow: inset 0 -65px 75px -60px rgba(0,0,0,.6); }
+.capture-page .camera-preview { width: 100%; height: 100%; object-fit: cover; }
+.capture-page .camera-viewport .live-quality-panel {
+  top: 9px; left: 9px; right: 9px;
+  padding: 7px 9px 8px;
+  border: 1px solid rgba(232,242,250,.18);
+  border-radius: 12px;
+  background: rgba(13,26,37,.76);
+  box-shadow: none;
+}
+.capture-page .live-quality-caption {
+  display: block;
+  color: #b8cbd6;
+  font-size: 10px;
+  line-height: 1.3;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+.capture-page .live-quality-grid { gap: 5px; }
+.capture-page .live-quality-item {
+  min-height: 36px; padding: 5px 3px;
+  display: flex; justify-content: center; flex-wrap: wrap;
+  align-content: center; align-items: baseline; gap: 4px;
+  border-radius: 7px;
+  background: transparent !important;
+  border-width: 0 !important;
+}
+.capture-page .live-quality-item > span { font-size: 11px; }
+.capture-page .live-quality-item > strong { margin: 0; font-size: 11px; }
+.capture-page .live-quality-item.good { color: #adf3d6; }
+.capture-page .live-quality-item.warn { color: #ffe0a2; }
+.capture-page .live-quality-item.checking { color: #d4e2ec; }
+.capture-page .viewfinder-corner { width: 26px; height: 26px; opacity: .7; }
+.capture-page .vc-1 { top: 95px; left: 17px; }
+.capture-page .vc-2 { top: 95px; right: 17px; }
+.capture-page .vc-3 { bottom: 74px; left: 17px; }
+.capture-page .vc-4 { bottom: 74px; right: 17px; }
+.capture-page .foot-guide { top: 90px; bottom: 65px; left: 22%; right: 22%; opacity: .72; pointer-events: none; }
+.capture-page .single-foot { width: min(125px, 55vw); height: min(245px, 38dvh); border-width: 2px; }
+.capture-page .camera-instruction {
+  bottom: 11px; width: max-content; max-width: calc(100% - 30px);
+  padding: 8px 12px; border-radius: 9px;
+  background: rgba(4,18,31,.68); box-shadow: none; line-height: 1.35;
+}
+.capture-page .camera-instruction > span {
+  display: block; font-size: 12px; font-weight: 600;
+  color: #f5f7fa; line-height: 1.4;
+}
+.capture-page .camera-instruction > small {
+  display: block; margin-top: 2px; font-size: 11px; line-height: 1.3; color: #d3e2ec;
+}
+.capture-page .capture-controls {
+  flex: 0 0 auto;
+  width: min(100%, 760px);
+  max-height: 45dvh;
+  min-height: 0;
+  padding: 8px 13px 13px;
+  margin: 0 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: center;
+  background: #0b1725;
+}
+.capture-page .capture-controls > .capture-tip {
+  display: flex; min-height: 0; margin: 0 0 7px;
+  color: #b3c4d3; font-size: 12px;
+  line-height: 1.3; justify-content: center; align-items: center;
+}
+.capture-page .capture-tip svg { flex: 0 0 auto; }
+.capture-page .manual-camera-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: min(100%, 460px);
+  margin: 0 auto;
+}
+.capture-page .manual-camera-actions .camera-action-button {
+  width: 100%; min-height: 66px; padding: 7px 4px;
+  border: 0; background: transparent; color: #e7eef4;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; font-weight: 600; box-shadow: none;
+}
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary {
+  width: 78px; height: 78px; min-height: 78px; max-width: 78px;
+  margin: 0 auto; padding: 0;
+  border: 4px solid #fff; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: #2678de;
+  box-shadow: inset 0 0 0 3px #2678de, 0 0 0 1px rgba(255,255,255,.25);
+}
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary > span { display: none; }
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary svg { flex: 0 0 auto; }
+.capture-page .manual-camera-actions button:focus-visible { outline: 3px solid #a4dafa; outline-offset: 3px; }
+.capture-page .capture-file-error { margin: 8px 0 0; min-height: 0; }
+.capture-page .camera-permission-error { margin: 4px auto 10px; padding: 8px 10px; }
+.capture-page .quality-result { padding: 10px; border-radius: 12px; }
+.capture-page .quality-heading { gap: 8px; }
+.capture-page .quality-heading > span { width: 32px; height: 32px; }
+.capture-page .quality-result .button-large { min-height: 50px; font-size: 15px; }
+.capture-page .quality-result .button-ghost { min-height: 42px; font-size: 14px; }
+.capture-page:has(.has-photo) .capture-controls { max-height: 48dvh; }
+.capture-page:has(.has-photo) .camera-viewport { min-height: 26dvh !important; }
+@media (max-width: 600px) {
+  .capture-page .camera-viewport { width: 100%; }
+  .capture-page .manual-camera-actions {
+    grid-template-columns: minmax(0,1fr) 76px minmax(0,1fr);
+    gap: 4px;
+  }
+  .capture-page .manual-camera-actions .camera-shutter.camera-action-primary {
+    width: 72px; height: 72px; min-height: 72px;
+  }
+  .capture-page .live-quality-item { flex-direction: column; gap: 1px; align-items: center; }
+  .capture-page .live-quality-item > span, .capture-page .live-quality-item > strong { font-size: 11px; }
+}
+@media (max-height: 580px) {
+  .capture-page .capture-header { flex-basis: 44px; min-height: 44px; }
+  .capture-page .camera-instruction > small { display: none; }
+  .capture-page .capture-controls > .capture-tip { display: none; }
+  .capture-page .manual-camera-actions .camera-shutter.camera-action-primary {
+    width: 60px; height: 60px; min-height: 60px;
+  }
+  .capture-page .manual-camera-actions .camera-action-button { min-height: 58px; }
+}
+/* Do not affect the separate photo review, dashboard, or admin layout. */
