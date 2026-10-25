@@ -46,6 +46,7 @@ import {
 import { footSteps } from './data'
 import { clearExaminationDraft, readExaminationDraft, saveExaminationDraft, type ExaminationDraftSnapshot } from './services/draftStorage'
 import { photosToBlobs } from './services/photoBlobs'
+import { normalizeSelectedPhoto } from './services/photoImport'
 import type { AuditLogger } from './services/auditLog'
 import { examinationPositions, runAnalysisWorkflow } from './services/analysisWorkflow'
 import { finalizeExamination } from './services/finalizeWorkflow'
@@ -916,7 +917,6 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
   const previousLuminanceRef = useRef<Float32Array | null>(null)
   const captureInProgressRef = useRef(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
-  const [captureMode, setCaptureMode] = useState<'self' | 'assisted'>('self')
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [cameraState, setCameraState] = useState<CameraState>('checking')
   const [qualityState, setQualityState] = useState<QualityState>('idle')
@@ -928,6 +928,14 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     clarity: { ok: boolean; text: string }
     steadiness: { ok: boolean; text: string }
   } | null>(null)
+
+  const attachVideo = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node
+    if (node && streamRef.current) {
+      node.srcObject = streamRef.current
+      void node.play().catch(() => setScanMessage('ไม่สามารถเล่นภาพกล้องได้ กรุณาลองเปิดกล้องอีกครั้ง'))
+    }
+  }, [])
 
   const startCamera = useCallback(async () => {
     const requestId = cameraRequestRef.current + 1
@@ -952,12 +960,17 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
         return
       }
       streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        void videoRef.current.play().catch(() => setScanMessage('ไม่สามารถแสดงภาพกล้องได้ กรุณาลองเปิดกล้องอีกครั้ง'))
+      }
       setCameraState('ready')
     } catch (error) {
       window.clearTimeout(timeoutId)
       if (cameraRequestRef.current !== requestId) return
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
       setCameraState(denied ? 'denied' : 'unsupported')
+      setFileError(denied ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง คุณยังอัปโหลดรูปแทนได้' : 'เปิดกล้องไม่สำเร็จ อาจมีแอปอื่นกำลังใช้กล้อง ลองใหม่หรืออัปโหลดภาพแทน')
     }
   }, [facingMode])
 
@@ -969,10 +982,6 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       streamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [startCamera, position])
-
-  useEffect(() => {
-    if (videoRef.current && streamRef.current) videoRef.current.srcObject = streamRef.current
-  }, [cameraState, photo])
 
   const clearPhoto = () => {
     captureInProgressRef.current = false
@@ -1014,28 +1023,21 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setFileError('กรุณาเลือกไฟล์รูปภาพเท่านั้น')
-      return
-    }
-    if (file.size > 15 * 1024 * 1024) {
-      setFileError('รูปภาพใหญ่เกิน 15 MB กรุณาเลือกภาพที่เล็กลง')
-      return
-    }
     setFileError('')
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') void setPhotoAndInspect(reader.result)
-      else setFileError('อ่านรูปภาพไม่สำเร็จ กรุณาเลือกใหม่')
-    }
-    reader.onerror = () => setFileError('อ่านรูปภาพไม่สำเร็จ กรุณาเลือกใหม่')
-    reader.readAsDataURL(file)
+    void normalizeSelectedPhoto(file)
+      .then((dataUrl) => setPhotoAndInspect(dataUrl))
+      .catch((error: unknown) => {
+        setFileError(error instanceof Error ? error.message : 'อ่านรูปภาพไม่สำเร็จ กรุณาเลือกใหม่')
+      })
   }
 
   const capturePhoto = useCallback(async () => {
     if (captureInProgressRef.current) return
     const video = videoRef.current
-    if (!video || cameraState !== 'ready' || video.videoWidth === 0) return
+    if (!video || cameraState !== 'ready' || video.videoWidth === 0) {
+      setFileError('ภาพกล้องยังไม่พร้อม กรุณาลองกดถ่ายอีกครั้ง')
+      return
+    }
     captureInProgressRef.current = true
     setScanMessage('กำลังบันทึกภาพ')
     const canvas = document.createElement('canvas')
@@ -1121,19 +1123,18 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
 
   return (
     <div className="capture-page">
-      <header className="capture-header"><button className="icon-button" type="button" aria-label="ย้อนกลับ" onClick={onBack}><ArrowLeft size={22} /></button><div><strong>{current.label}</strong><span>{step + 1} จาก 4</span></div><button className="text-button" type="button" onClick={() => { setPhotos({}); clearPhoto() }}>เริ่มใหม่</button></header>
+      <header className="capture-header">
+        <button className="icon-button" type="button" aria-label="ย้อนกลับ" onClick={onBack}><ArrowLeft size={22} /></button>
+        <div><strong>{current.label}</strong><span>{step + 1} / 4</span></div>
+        <button className="capture-audio-toggle" type="button" aria-label={audioEnabled ? 'ปิดเสียงแนะนำ' : 'เปิดเสียงแนะนำ'} aria-pressed={audioEnabled} onClick={() => setAudioEnabled((enabled) => !enabled)}>{audioEnabled ? 'เสียงเปิด' : 'เสียงปิด'}</button>
+      </header>
       <div className="step-segments" aria-label={`ขั้นตอน ${step + 1} จาก 4`}>{footSteps.map((item, index) => <span key={item.id} className={index <= step ? 'complete' : ''} />)}</div>
-      <div className="capture-mode-bar" role="group" aria-label="รูปแบบการถ่ายภาพ">
-        <button className={captureMode === 'self' ? 'selected' : ''} type="button" onClick={() => setCaptureMode('self')}>ถ่ายด้วยตนเอง</button>
-        <button className={captureMode === 'assisted' ? 'selected' : ''} type="button" onClick={() => setCaptureMode('assisted')}>ให้ผู้อื่นช่วยถ่าย</button>
-        <button className={audioEnabled ? 'audio-toggle enabled' : 'audio-toggle'} type="button" aria-pressed={audioEnabled} onClick={() => setAudioEnabled((enabled) => !enabled)}>เสียงแนะนำ: {audioEnabled ? 'เปิด' : 'ปิด'}</button>
-      </div>
       <div className={photo ? 'camera-viewport has-photo' : 'camera-viewport'} style={photo ? { backgroundImage: `url(${photo})` } : undefined}>
-        {!photo && cameraState === 'ready' ? <video ref={videoRef} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
-        {!photo ? <><div className="camera-grid" /><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><strong>{current.label}</strong><span>{current.hint}</span><span>{scanMessage}</span></div></> : null}
+        {!photo && cameraState === 'ready' ? <video ref={attachVideo} className="camera-preview" autoPlay playsInline muted aria-label={`ภาพตัวอย่างกล้องสำหรับ${current.label}`} /> : null}
+        {!photo ? <><div className="foot-guide"><div className={`single-foot ${position.includes('right') ? 'right' : ''}`} /></div><div className="camera-instruction"><span>{current.hint}</span><small>{scanMessage}</small></div></> : null}
         {!photo ? (
           <div className="live-quality-panel" role="group" aria-label="ข้อมูลคุณภาพภาพขณะเปิดกล้อง">
-            <strong>คุณภาพภาพแบบเรียลไทม์</strong>
+            <span className="live-quality-caption">คุณภาพภาพสด (คำแนะนำ)</span>
             <div className="live-quality-grid" aria-live="off">
               {([
                 { label: 'แสง', signal: liveQuality?.light },
@@ -1152,10 +1153,9 @@ function CaptureStep({ step, photos, setPhotos, onNext, onBack }: { step: number
       <div className="capture-controls">
         {!photo ? (
           <>
-            <p><ScanLine size={18} />{captureMode === 'self' ? current.hint + ' แล้วกดถ่ายภาพด้วยตนเอง' : 'ให้ผู้ช่วยถือโทรศัพท์ จัดภาพตามกรอบ แล้วกดถ่าย'}</p>
-            <p className="capture-fallback-note"><Info size={17} />สถานะภาพสดใช้ช่วยจัดแสงและความนิ่งเท่านั้น ไม่ใช่ผลตรวจโรค และไม่ล็อกปุ่มถ่าย</p>
+            <p className="capture-tip"><Info size={15} />ดูสถานะภาพ แล้วกดถ่ายเองได้ทุกเมื่อที่กล้องพร้อม</p>
             {cameraState === 'denied' || cameraState === 'unsupported' ? <div className="camera-permission-error" role="alert"><VideoOff size={20} /><div><strong>{permissionMessage}</strong><small>คุณยังเลือกภาพจากเครื่องแทนได้</small><button type="button" onClick={() => void startCamera()}>ลองเปิดกล้องอีกครั้ง</button></div></div> : null}
-            <input ref={inputRef} className="visually-hidden" type="file" accept="image/*" onChange={readPhoto} />
+            <input ref={inputRef} className="visually-hidden" type="file" accept="image/*,.heic,.heif" onChange={readPhoto} />
             <div className="camera-actions manual-camera-actions">
               <button className="camera-action-button" type="button" onClick={() => inputRef.current?.click()}><ImageIcon size={22} /><span>อัปโหลดรูป</span></button>
               <button className="camera-shutter camera-action-primary" type="button" disabled={cameraState !== 'ready'} onClick={() => void capturePhoto()} aria-label="กดถ่ายภาพด้วยตนเอง"><Camera size={28} /><span>กดถ่ายภาพ</span></button>
