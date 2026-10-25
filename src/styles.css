@@ -531,3 +531,44 @@ button:disabled { cursor: wait; opacity: .65; }
   .review-add-row { grid-template-columns: 1fr; }
   .review-save-bar .button { flex: 1; }
 }
+
+
+/* Manual DMFC capture — live indicators advise; only the user controls the shutter. */
+.camera-viewport .live-quality-panel {
+  position: absolute; z-index: 3; top: 14px; left: 14px; right: 14px;
+  padding: 12px; border: 1px solid rgba(207,232,245,.34); border-radius: 15px;
+  background: rgba(9,28,43,.86); color: #f0f8fb;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+.live-quality-panel > strong { display: block; margin-bottom: 9px; font-size: 13px; letter-spacing: .01em; }
+.live-quality-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px; }
+.live-quality-item { padding: 9px 5px; border-radius: 10px; border: 1px solid transparent; text-align: center; }
+.live-quality-item > span { display: block; font-size: 11px; opacity: .94; }
+.live-quality-item > strong { display: block; margin-top: 3px; font-size: 12px; line-height: 1.4; }
+.live-quality-item.good { color: #d0fff0; border-color: rgba(85,222,167,.45); background: rgba(18,111,86,.50); }
+.live-quality-item.warn { color: #fff0cb; border-color: rgba(251,189,69,.56); background: rgba(117,79,17,.56); }
+.live-quality-item.checking { color: #e1ecfa; border-color: rgba(165,194,218,.32); background: rgba(40,68,92,.72); }
+.manual-camera-actions { display: grid; grid-template-columns: minmax(0,1fr) minmax(145px,1.35fr) minmax(0,1fr); gap: 9px; }
+.manual-camera-actions .camera-shutter.camera-action-primary {
+  width: 100%; height: auto; min-height: 76px; margin: 0; padding: 10px 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 2px solid rgba(255,255,255,.85); border-radius: 16px;
+  background: #3675e5; color: #fff; font-size: 15px; font-weight: 800;
+  box-shadow: 0 4px 15px rgba(0,0,0,.17);
+}
+.manual-camera-actions .camera-shutter.camera-action-primary:disabled { opacity: .45; cursor: not-allowed; }
+.manual-camera-actions .camera-action-button { min-width: 0; font-size: 12px; }
+.manual-camera-actions button:focus-visible { outline: 3px solid #fef08a; outline-offset: 3px; }
+.capture-controls .capture-file-error { color: #ffe8d7; background: #873a2f; border: 1px solid #e9a69b; min-height: 0; margin-top: 9px; padding: 9px; border-radius: 9px; font-size: 13px; }
+@media (max-width: 480px) {
+ .camera-viewport .live-quality-panel { top: 8px; left: 8px; right: 8px; padding: 9px; }
+ .live-quality-panel > strong { margin-bottom: 6px; font-size: 12px; }
+ .live-quality-grid { gap: 5px; }
+ .live-quality-item { padding: 6px 3px; }
+ .live-quality-item > span { font-size: 10px; }
+ .live-quality-item > strong { font-size: 11px; }
+ .manual-camera-actions { grid-template-columns: minmax(0,1fr) minmax(106px,1.2fr) minmax(0,1fr); gap: 6px; }
+ .manual-camera-actions .camera-shutter.camera-action-primary { min-height: 70px; font-size: 13px; }
+ .manual-camera-actions .camera-action-button { font-size: 11px; padding: 7px 4px; }
+}
