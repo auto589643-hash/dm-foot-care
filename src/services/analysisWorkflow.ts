@@ -16,7 +16,7 @@ export interface AnalysisWorkflowInput {
   idempotencyKey?: string
   auditLogger?: AuditLogger
   actorId?: string | null
-  /** Browser-compressed images let Gemini run in parallel with Drive uploads. */
+  /** Optional browser-compressed images, passed to AI once all originals are safely stored. */
   analysisImages?: Partial<Record<FootPosition, string>> | Promise<Partial<Record<FootPosition, string>>>
   existingImageReferences?: {
     driveFolderId: string | null
@@ -55,40 +55,49 @@ export async function runAnalysisWorkflow(input: AnalysisWorkflowInput): Promise
   const idempotencyKey = input.idempotencyKey ?? `${examinationId}:${diseaseMasterVersion}`
   try {
     await repository.updateStatus(examinationId, 'uploading')
+
+    // Upload may involve four independent requests. Wait for every request
+    // to settle before transitioning or retrying so late writes cannot race
+    // with the next attempt and successful references remain reusable.
+    const existing = input.existingImageReferences ?? await repository.getImageReferences(examinationId)
+    const driveFolderId = existing.driveFolderId ?? await archive.createPrivateExaminationFolder(username, examinationId, examinedAt)
+    const missingPositions = examinationPositions.filter((position) => !existing.driveFileIds[position])
+    const uploads = await Promise.allSettled(missingPositions.map(async (position) => {
+      const image = images[position]
+      if (!image) throw new Error(`Missing image for ${position}`)
+      const metadata = { contentType: image.type, size: image.size }
+      let driveFileId: string
+      if (archive.uploadOriginalWithReference) {
+        driveFileId = await archive.uploadOriginalWithReference({ examinationId, folderId: driveFolderId, position, image, metadata })
+      } else {
+        driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
+        await repository.saveImageReference({ examinationId, position, driveFolderId, driveFileId, metadata })
+      }
+      await appendAuditSafely(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position })
+      return [position, driveFileId] as const
+    }))
+    const firstFailure = uploads.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (firstFailure) throw firstFailure.reason
+
+    const completedUploads = uploads
+      .filter((result): result is PromiseFulfilledResult<readonly [FootPosition, string]> => result.status === 'fulfilled')
+      .map((result) => result.value)
+    const imageReferences = { ...existing.driveFileIds, ...Object.fromEntries(completedUploads) } as Record<FootPosition, string>
+    const missingAfterUpload = examinationPositions.filter((position) => !imageReferences[position])
+    if (missingAfterUpload.length > 0) throw new Error(`Missing image references: ${missingAfterUpload.join(', ')}`)
+
+    // The app must not claim it is analyzing before all four originals have
+    // finished persisting. This also prevents paid AI work for failed uploads.
     await repository.updateStatus(examinationId, 'analyzing')
-
-    const uploadTask = (async () => {
-      const existing = input.existingImageReferences ?? await repository.getImageReferences(examinationId)
-      const driveFolderId = existing.driveFolderId ?? await archive.createPrivateExaminationFolder(username, examinationId, examinedAt)
-      const missingPositions = examinationPositions.filter((position) => !existing.driveFileIds[position])
-      const uploaded = await Promise.all(missingPositions.map(async (position) => {
-        const image = images[position]
-        if (!image) throw new Error(`Missing image for ${position}`)
-        const metadata = { contentType: image.type, size: image.size }
-        let driveFileId: string
-        if (archive.uploadOriginalWithReference) {
-          driveFileId = await archive.uploadOriginalWithReference({ examinationId, folderId: driveFolderId, position, image, metadata })
-        } else {
-          driveFileId = await archive.uploadOriginal(driveFolderId, position, image)
-          await repository.saveImageReference({ examinationId, position, driveFolderId, driveFileId, metadata })
-        }
-        await appendAuditSafely(input, 'image_uploaded', 'image', `${examinationId}:${position}`, { position })
-        return [position, driveFileId] as const
-      }))
-      const imageReferences = { ...existing.driveFileIds, ...Object.fromEntries(uploaded) } as Record<FootPosition, string>
-      const missingAfterUpload = examinationPositions.filter((position) => !imageReferences[position])
-      if (missingAfterUpload.length > 0) throw new Error(`Missing image references: ${missingAfterUpload.join(', ')}`)
-      return { driveFolderId, imageReferences }
-    })()
-
-    const analysisTask = (async () => {
-      const analysisImages = await input.analysisImages
-      const fallbackReferences = analysisImages ? {} : (await uploadTask).imageReferences
-      await appendAuditSafely(input, 'ai_analysis_started', 'ai_analysis', examinationId, { idempotencyKey, diseaseMasterVersion })
-      return provider.analyze({ examinationId, idempotencyKey, imageReferences: fallbackReferences, analysisImages, diseaseMasterVersion })
-    })()
-
-    const [{ driveFolderId, imageReferences }, analysis] = await Promise.all([uploadTask, analysisTask])
+    const analysisImages = await input.analysisImages
+    await appendAuditSafely(input, 'ai_analysis_started', 'ai_analysis', examinationId, { idempotencyKey, diseaseMasterVersion })
+    const analysis = await provider.analyze({
+      examinationId,
+      idempotencyKey,
+      imageReferences: analysisImages ? {} : imageReferences,
+      analysisImages,
+      diseaseMasterVersion,
+    })
     await Promise.all([
       appendAuditSafely(input, 'ai_analysis_completed', 'ai_analysis', analysis.runId, { findingCount: analysis.findings.length }),
       repository.saveAiAnalysis({
