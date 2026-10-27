@@ -40,8 +40,10 @@ assert.match(reviewApi, /Number\.isInteger\(error\?\.status\) \? error\.status :
 assert.doesNotMatch(reviewApi, /console\.(log|info)\([^)]*findings/i, 'review endpoint does not log patient findings')
 
 const notificationsApi = fs.readFileSync('backend/api/v1/notifications.mjs', 'utf8')
-assert.match(notificationsApi, /user_id=eq\.' \+ encodeURIComponent\(session\.user\.id\)/, 'notification reads are explicitly user-scoped')
-assert.match(notificationsApi, /acknowledged_at=is\.null/, 'bootstrap only returns unread notifications')
+assert.match(notificationsApi, /user_id=eq\.\$\{encodeURIComponent\(session\.user\.id\)\}/, 'notification reads explicitly filter owned examinations')
+assert.match(notificationsApi, /if \(String\(payload\.patientUserId \|\| ''\) !== session\.user\.id\) return \[\]/, 'revision ownership is checked')
+assert.match(notificationsApi, /unreadOnly && revisionNo <= ackRevision/, 'bootstrap filters acknowledged revisions')
+assert.match(notificationsApi, /acknowledgementMap\(user\)/, 'notification reads durable per-user acknowledgements')
 assert.match(notificationsApi, /notificationId/, 'ack endpoint identifies one notification')
 assert.match(notificationsApi, /idempotent: true/, 'repeat acknowledgement is idempotent')
 
