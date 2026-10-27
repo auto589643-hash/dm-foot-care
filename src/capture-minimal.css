@@ -176,3 +176,197 @@
   .capture-page .manual-camera-actions .camera-action-button { min-height: 58px; }
 }
 /* Do not affect the separate photo review, dashboard, or admin layout. */
+
+
+/* Impeccable motion pass — clinical, tactile feedback only.
+   Three quality checks and the thin dotted foot guide remain visible.
+   No idle loops, auto-capture, layout animation, or extra JS dependencies. */
+.capture-page {
+  --dmfc-motion-press: 105ms;
+  --dmfc-motion-return: 165ms;
+  --dmfc-motion-state: 170ms;
+  --dmfc-motion-ease: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* One clear response to a finger press, independent of hover capabilities. */
+.capture-page :is(
+  .capture-header .icon-button,
+  .capture-audio-toggle,
+  .manual-camera-actions .camera-action-button,
+  .manual-camera-actions .camera-shutter.camera-action-primary,
+  .camera-permission-error button,
+  .quality-result .button
+) {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transform-origin: center;
+  transition:
+    transform var(--dmfc-motion-return) var(--dmfc-motion-ease),
+    background-color var(--dmfc-motion-state) ease,
+    color var(--dmfc-motion-state) ease,
+    border-color var(--dmfc-motion-state) ease,
+    opacity var(--dmfc-motion-state) ease;
+}
+
+.capture-page :is(
+  .capture-header .icon-button,
+  .capture-audio-toggle,
+  .manual-camera-actions .camera-action-button,
+  .manual-camera-actions .camera-shutter.camera-action-primary,
+  .camera-permission-error button,
+  .quality-result .button
+):active:not(:disabled) {
+  transform: scale(.955);
+  transition-duration: var(--dmfc-motion-press);
+}
+
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary {
+  position: relative;
+  isolation: isolate;
+}
+
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 1.5px solid rgba(232, 244, 255, .85);
+  border-radius: inherit;
+  opacity: 0;
+  transform: scale(1);
+  pointer-events: none;
+  transition:
+    transform var(--dmfc-motion-return) var(--dmfc-motion-ease),
+    opacity var(--dmfc-motion-press) ease;
+}
+
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary:active:not(:disabled) {
+  transform: scale(.92);
+  background-color: #1d64bc;
+}
+
+.capture-page .manual-camera-actions .camera-shutter.camera-action-primary:active:not(:disabled)::before {
+  opacity: .82;
+  transform: scale(1.105);
+}
+
+.capture-page .manual-camera-actions .camera-action-button:active:not(:disabled),
+.capture-page .capture-header .icon-button:active:not(:disabled) {
+  background-color: rgba(207, 227, 247, .13);
+}
+
+.capture-page .capture-audio-toggle[aria-pressed="true"] {
+  color: #d7edff;
+  background-color: rgba(137, 189, 244, .11);
+  border-radius: 10px;
+}
+
+.capture-page :is(
+  .capture-header .icon-button,
+  .capture-audio-toggle,
+  .manual-camera-actions .camera-action-button,
+  .manual-camera-actions .camera-shutter.camera-action-primary,
+  .camera-permission-error button,
+  .quality-result .button
+):focus-visible {
+  outline: 3px solid #b8e5ff;
+  outline-offset: 3px;
+}
+
+.capture-page .manual-camera-actions button:disabled {
+  transform: none;
+}
+
+/* Camera guidance settles once when a step opens, never drifts during aiming. */
+.capture-page .foot-guide .single-foot {
+  animation: dmfc-guide-settle 240ms var(--dmfc-motion-ease) both;
+}
+.capture-page .camera-viewport .live-quality-panel {
+  animation: dmfc-quality-panel-arrive 180ms var(--dmfc-motion-ease) both;
+}
+
+/* Live changes may update several times per second. Only colors interpolate:
+   no repeated scale, pulse, glow or position changes around the camera feed. */
+.capture-page .live-quality-item,
+.capture-page .live-quality-item > strong {
+  transition: color var(--dmfc-motion-state) ease;
+}
+
+/* A captured/uploaded still and its review controls appear as one short state transition. */
+.capture-page .camera-viewport.has-photo {
+  animation: dmfc-still-arrive 170ms var(--dmfc-motion-ease) both;
+}
+.capture-page .capture-controls .quality-result {
+  animation: dmfc-review-arrive 190ms var(--dmfc-motion-ease) both;
+}
+.capture-page .quality-result .button-primary:active:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+/* Step completion is readable without implying auto-capture or clinical certainty. */
+.capture-page .step-segments span {
+  transition: background-color 190ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .capture-page .manual-camera-actions .camera-shutter.camera-action-primary:hover:not(:disabled) {
+    background-color: #307fe1;
+  }
+  .capture-page .manual-camera-actions .camera-action-button:hover:not(:disabled),
+  .capture-page .capture-header .icon-button:hover:not(:disabled) {
+    background-color: rgba(208, 230, 248, .08);
+  }
+}
+
+@keyframes dmfc-guide-settle {
+  from { opacity: .72; transform: scale(.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes dmfc-quality-panel-arrive {
+  from { opacity: .88; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dmfc-still-arrive {
+  from { opacity: .86; }
+  to { opacity: 1; }
+}
+@keyframes dmfc-review-arrive {
+  from { opacity: .9; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-page .foot-guide .single-foot,
+  .capture-page .camera-viewport .live-quality-panel,
+  .capture-page .camera-viewport.has-photo,
+  .capture-page .capture-controls .quality-result {
+    animation: none !important;
+  }
+  .capture-page :is(
+    .capture-header .icon-button,
+    .capture-audio-toggle,
+    .manual-camera-actions .camera-action-button,
+    .manual-camera-actions .camera-shutter.camera-action-primary,
+    .camera-permission-error button,
+    .quality-result .button
+  ),
+  .capture-page .live-quality-item,
+  .capture-page .live-quality-item > strong,
+  .capture-page .step-segments span,
+  .capture-page .manual-camera-actions .camera-shutter.camera-action-primary::before {
+    transition-duration: .01ms !important;
+  }
+  .capture-page :is(
+    .capture-header .icon-button,
+    .capture-audio-toggle,
+    .manual-camera-actions .camera-action-button,
+    .manual-camera-actions .camera-shutter.camera-action-primary,
+    .camera-permission-error button,
+    .quality-result .button
+  ):active:not(:disabled) {
+    transform: none !important;
+  }
+  /* Retain clear non-spatial pressed feedback when motion is reduced. */
+  .capture-page .manual-camera-actions .camera-shutter.camera-action-primary:active:not(:disabled) {
+    background-color: #1d64bc;
+  }
+}
