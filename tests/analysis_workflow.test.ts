@@ -82,9 +82,72 @@ const parallelRun = runAnalysisWorkflow({
   analysisImages: Object.fromEntries(positions.map((position) => [position, 'data:image/jpeg;base64,YQ=='])),
 })
 await new Promise((resolve) => setTimeout(resolve, 0))
-assert.equal(providerStartedBeforeUpload, true)
+assert.equal(providerStartedBeforeUpload, false)
 releaseUpload()
 await parallelRun
+assert.equal(providerStartedBeforeUpload, false)
+assert.equal(uploadFinished, true)
+
+
+/* A partial Drive failure must not start Gemini, mark analysis_failed while
+ * other uploads are still unresolved, or lose successful persisted refs. */
+const completedPositions: FootPosition[] = []
+const retryUploadPositions: FootPosition[] = []
+const failedStatuses: string[] = []
+let finishLeftSole!: () => void
+const lateSuccessfulUpload = new Promise<void>((resolve) => { finishLeftSole = resolve })
+let analysisCallsOnFailedUpload = 0
+let missingUploadAttempt = true
+const partialArchive: OriginalImageArchive = {
+  async createPrivateExaminationFolder() { return 'partial-folder' },
+  async uploadOriginal(_folderId, position) {
+    retryUploadPositions.push(position)
+    if (position === 'left-dorsal' && missingUploadAttempt) throw new Error('temporary upload failure')
+    if (position === 'left-sole' && missingUploadAttempt) await lateSuccessfulUpload
+    completedPositions.push(position)
+    return `partial-${position}`
+  },
+}
+const partialRepo: ExaminationRepository = {
+  ...repository,
+  async getImageReferences() {
+    return { driveFolderId: 'partial-folder', driveFileIds: {} }
+  },
+  async saveImageReference(input) { completedPositions.push(`saved:${input.position}` as FootPosition) },
+  async updateStatus(_id, status) { failedStatuses.push(status) },
+}
+const partialProvider: FootAssessmentProvider = {
+  async analyze(input) {
+    analysisCallsOnFailedUpload += 1
+    return new MockFootAssessmentProvider().analyze(input)
+  },
+}
+let failureSettled = false
+const partialFailure = runAnalysisWorkflow({
+  examinationId: 'EX-PARTIAL', username: 'DM001', images, diseaseMasterVersion: '1',
+  archive: partialArchive, provider: partialProvider, repository: partialRepo,
+}).then(() => { throw new Error('partial failure was not propagated') }, () => { failureSettled = true })
+await new Promise((resolve) => setTimeout(resolve, 0))
+assert.equal(failureSettled, false, 'must wait for all in-flight uploads before marking failure')
+assert.equal(analysisCallsOnFailedUpload, 0, 'Gemini must not run on failed uploads')
+finishLeftSole()
+await partialFailure
+assert.equal(failedStatuses.at(-1), 'analysis_failed')
+assert.equal(analysisCallsOnFailedUpload, 0)
+assert.ok(completedPositions.includes('right-sole'), 'other successful uploads completed before failure is surfaced')
+
+missingUploadAttempt = false
+const resumedResult = await runAnalysisWorkflow({
+  examinationId: 'EX-PARTIAL', username: 'DM001', images, diseaseMasterVersion: '1',
+  archive: partialArchive, provider: partialProvider, repository: partialRepo,
+  existingImageReferences: {
+    driveFolderId: 'partial-folder',
+    driveFileIds: { 'left-sole': 'partial-left-sole', 'right-dorsal': 'partial-right-dorsal', 'right-sole': 'partial-right-sole' },
+  },
+})
+assert.deepEqual(retryUploadPositions.filter((position, index) => index >= 4), ['left-dorsal'])
+assert.equal(Object.keys(resumedResult.driveFileIds).length, 4)
+assert.equal(analysisCallsOnFailedUpload, 1)
 
 const failureStatuses: string[] = []
 const failingProvider: FootAssessmentProvider = { async analyze() { throw new Error('provider down') } }
