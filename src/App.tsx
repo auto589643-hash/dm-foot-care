@@ -747,8 +747,10 @@ function ExaminationFlow({ profile, diseaseRecords, integrations, stage, setStag
     if (stage !== 'processing') return
     let cancelled = false
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setAnalysisError('ไม่มีสัญญาณอินเทอร์เน็ต ภาพทั้ง 4 มุมยังอยู่ในเครื่อง กรุณาเชื่อมต่อแล้วกดลองใหม่')
-      return () => { cancelled = true }
+      const offlineTimer = window.setTimeout(() => {
+        if (!cancelled) setAnalysisError('ไม่มีสัญญาณอินเทอร์เน็ต ภาพทั้ง 4 มุมยังอยู่ในเครื่อง กรุณาเชื่อมต่อแล้วกดลองใหม่')
+      }, 0)
+      return () => { cancelled = true; window.clearTimeout(offlineTimer) }
     }
     const progressTimers = [
       window.setTimeout(() => setProcessStep(1), 650),
