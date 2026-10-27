@@ -34,7 +34,9 @@ const reviewApi = fs.readFileSync('backend/api/v1/admin/examination-review.mjs',
 assert.match(reviewApi, /requireStaffUser/, 'review endpoint enforces server staff authorization')
 assert.match(reviewApi, /expectedCurrentRevision/, 'review endpoint requires optimistic concurrency version')
 assert.match(reviewApi, /requestId/, 'review endpoint carries idempotency request key')
-assert.match(reviewApi, /409/, 'stale revisions become deterministic conflict response')
+const reviewService = fs.readFileSync('backend/api/_lib/result-revisions.mjs', 'utf8')
+assert.match(reviewService, /appError\(409,/, 'service issues an HTTP 409 for stale or concurrent edits')
+assert.match(reviewApi, /Number\.isInteger\(error\?\.status\) \? error\.status : 500/, 'controller forwards the service conflict status')
 assert.doesNotMatch(reviewApi, /console\.(log|info)\([^)]*findings/i, 'review endpoint does not log patient findings')
 
 const notificationsApi = fs.readFileSync('backend/api/v1/notifications.mjs', 'utf8')
