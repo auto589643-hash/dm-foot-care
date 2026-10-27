@@ -1,0 +1,33 @@
+name: DMFC Upload & Analysis Regression QA (temporary)
+on:
+  push:
+    branches: [fix/dmfc-upload-analysis-resilience-20261027]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Confirm offline state + upload retry contract
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import assert from 'node:assert/strict'
+          const app = fs.readFileSync('src/App.tsx','utf8')
+          const flow = fs.readFileSync('src/services/analysisWorkflow.ts','utf8')
+          assert.match(app, /ไม่มีสัญญาณอินเทอร์เน็ต ภาพทั้ง 4 มุมยังอยู่ในเครื่อง/)
+          assert.match(flow, /Promise\.allSettled/)
+          assert.match(flow, /firstFailure/)
+          assert.ok(flow.indexOf("await repository.updateStatus(examinationId, 'analyzing')") > flow.indexOf('if (firstFailure) throw'))
+          assert.ok(flow.indexOf('provider.analyze') > flow.indexOf("await repository.updateStatus(examinationId, 'analyzing')"))
+          assert.doesNotMatch(flow, /const uploadTask|const analysisTask/)
+          console.log('Offline recovery and upload-first contract passed')
+          NODE
