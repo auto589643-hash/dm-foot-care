@@ -1,67 +1,33 @@
-# DM Foot Care
+# DM Foot Care — Source Handoff
 
-DM Foot Care ระบบติดตามสุขภาพเท้าแบบ mobile-first ที่เชื่อม Supabase, Google Drive, Gemini และ Vercel API สำหรับการใช้งานจริงในโครงการนำร่อง
+DM Foot Care is a mobile-first foot-health monitoring application with a React/Vite frontend, Vercel API backend, Supabase database and private storage, Google Drive image archive and Gemini AI-assisted assessment.
 
-## เริ่มใช้งาน
+## Source contents
 
-```bash
-npm install
-npm run dev
-```
+- `src/`, `public/`: React/TypeScript frontend and assets
+- `api/`, `backend/api/`: Vercel serverless endpoints, authorization and integrations
+- `supabase/migrations/`, `supabase/verification/`: schema and RLS verification
+- `tests/`, `scripts/`: tests and preflight checks
+- `HANDOFF/`: architecture, API, configuration, deployment and release scope
+- `.env.example`: placeholders only — no credentials
 
-เปิด URL ที่ Vite แสดงใน Terminal
+## Build and verification
 
-เอกสารหลัก: [แผนพัฒนา](IMPLEMENTATION_PLAN.md), [Requirement audit](REQUIREMENT_AUDIT.md), [Backend integration contract](BACKEND_INTEGRATION_CONTRACT.md), [Pilot QA checklist](PILOT_QA_CHECKLIST.md) และ [Supabase foundation](supabase/README.md)
+Use a supported Node.js version (Node.js 22+ recommended, confirm Vite compatibility with your environment).
 
-## ความสามารถหลัก
-
-- Patient: login, home, capture flow 4 มุมด้วยภาพตัวอย่าง/ไฟล์จากกล้อง, photo review, processing pipeline (mock private archive + mock AI), offline/online recovery, human review, post-confirmation thumbnail finalization, history, calendar, insight และ knowledge library
-- Doctor: overview, user management (สร้างบัญชีพร้อม PIN เริ่มต้นแบบไม่เก็บค่า PIN ดิบ, แก้ไข/ปิดใช้งาน/reset PIN/ดูประวัติ), Disease Master ที่กำหนดเกณฑ์ Severity แยกต่อภาวะ และ knowledge management
-- Production boundary: private Drive folder path is deterministic (`DM Foot Care/รูปเท้า/YYYY/Month/DD/Username_ExaminationID`) and is derived server-side/covered by contract tests; setting `VITE_DMFC_API_BASE_URL` switches auth, current-user history, published patient Knowledge/Disease labels (including Supabase-shaped Disease normalization), staff read data and typed admin mutation boundaries to the browser-safe HTTP adapters
-- `npm run test:ai` ตรวจ AI output validator, mock provider, resumable/idempotent analysis workflow, thumbnail finalization/browser thumbnail service, draft storage, audit log, schema invariants, HTTP adapter contract, runtime adapter selection, HTTP pipeline end-to-end contract และ image-quality heuristics
-- `npm run test:security` ตรวจไม่ให้ backend secret/private key/raw PIN หรือ sensitive client log หลุดเข้า source และ production bundle
-- `npm run test:preflight` ตรวจ deployment preflight contract ด้วย fake backend (HTTPS-local exception, CORS และ response shape) โดยไม่ต้องใช้ credentials จริง
-- `npm run verify` รัน lint, production build และ test suites ที่ตรวจได้ใน repository ต่อเนื่องกัน
-
-## ขอบเขตสำคัญ
-
-Browser runtime ไม่มี silent mock/demo fallback หาก Backend มีปัญหา ระบบจะแสดงสถานะว่างหรือข้อผิดพลาดแทนการใส่ข้อมูลตัวอย่าง ผู้ใช้งาน Production ต้องผ่าน Backend API และข้อมูลจริงเท่านั้น
-
-## ตรวจสอบคุณภาพ
-
-```bash
-npm run lint
-npm run build
-npm run test:ai
-npm run test:security
+```sh
+npm ci
 npm run verify
 ```
 
-Smoke test อยู่ที่ `tests/e2e_smoke.py` และครอบคลุม patient golden path, Doctor Overview result drill-down, doctor workspace และการบันทึกเกณฑ์ Severity แยกต่อ Disease
+Local browser UI: `npm run dev`. The Vercel backend requires a compatible API runtime and configuration; the Vite development server alone is not a full backend.
 
-เมื่อไม่มี Vite server เปิดอยู่ ให้ใช้ bundled helper จัดการ lifecycle ให้เอง:
+## Technical handoff
 
-```bash
-<bundled-python> D:/Project/.agents/skills/webapp-testing/scripts/with_server.py --server "npm.cmd run dev -- --host 127.0.0.1 --port 4173" --port 4173 -- <bundled-python> tests/e2e_smoke.py
-```
+Start with [HANDOFF/README_HANDOFF.md](HANDOFF/README_HANDOFF.md). Follow the integration architecture, API inventory, environment setup, deployment runbook, and acceptance requirements therein.
 
-Accessibility smoke test อยู่ที่ `tests/accessibility_smoke.py` และตรวจ keyboard focus, profile-menu Escape และ reflow ที่เทียบเท่า 200% zoom
+**Security:** do not put live secrets, OAuth refresh tokens, patient images or production database exports in this repository. The receiver provisions and operates its own provider accounts.
 
-Configured-runtime smoke test อยู่ที่ `tests/backend_runtime_smoke.py` โดยเปิด Vite ด้วย `VITE_DMFC_API_BASE_URL` และ backend จำลอง เพื่อทดสอบ browser fetch จริงสำหรับ login, patient history, examination pipeline (draft/upload/AI/confirm/thumbnail/audit) และ Doctor admin read/mutation paths:
+**Clinical use:** AI outputs support review; they are not independently certified diagnoses. End-to-end clinical workflow and data protection acceptance remain operator responsibilities.
 
-```bash
-<bundled-python> tests/backend_runtime_smoke.py
-```
-
-ก่อนชี้ frontend ไปยัง staging จริง ใช้ `npm run preflight:backend` พร้อม `DMFC_API_BASE_URL`, `DMFC_PREFLIGHT_ORIGIN` และ (ถ้าต้องการตรวจ authenticated responses) `DMFC_PREFLIGHT_ACCESS_TOKEN`; script ตรวจ HTTPS, reachability และ CORS โดยไม่พิมพ์ token
-
-ตัวอย่าง PowerShell:
-
-```powershell
-$env:DMFC_API_BASE_URL = 'https://api.example.test'
-$env:DMFC_PREFLIGHT_ORIGIN = 'https://app.example.test'
-$env:DMFC_PREFLIGHT_ACCESS_TOKEN = 'short-lived-token'
-npm run preflight:backend
-```
-
-เมื่อมี Supabase staging แล้ว ใช้ `npm run preflight:supabase` พร้อม `SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, token ของ Patient A/B และ Doctor เพื่อตรวจ RLS isolation และยืนยันว่า patient เขียน `examinations` ตรงผ่าน Data API ไม่ได้; token จะไม่ถูกพิมพ์หรือเก็บไว้
+**Scope:** deliverable is source code plus integration/deployment technical reference. Copyright filing forms and transfer of existing cloud accounts or patient data are not part of this package.
