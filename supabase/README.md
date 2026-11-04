@@ -1,6 +1,6 @@
 # Supabase foundation
 
-ไฟล์ในโฟลเดอร์นี้เป็น production foundation ที่เตรียมจาก PRD แต่ยังไม่ได้ apply กับ Supabase project ใด เพราะ repository นี้ยังไม่มี project ref/credentials และเครื่องพัฒนาไม่มี Supabase CLI
+ไฟล์ในโฟลเดอร์นี้เป็น Database Migrations, Development Seed และ RLS Verification ของ DM Foot Care. ก่อนนำไปใช้กับฐานข้อมูลปลายทาง ต้องตรวจสอบประวัติ Migration ของ Project จริง ทดสอบใน Staging และยืนยัน RLS/Storage Policies โดยทีมผู้รับมอบ ห้ามถือว่าข้อความใน README เดิมเป็นหลักฐานสถานะ Production
 
 ลำดับการใช้งานเมื่อมี project แล้ว:
 
